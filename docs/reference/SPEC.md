@@ -19,14 +19,9 @@ flowchart LR
   B --> O["Ranked list + recruiter view"]
 ```
 
-**Partition rule.** Anything true about a person regardless of any job is Flow A. Anything measured
-against a specific job is Flow B.
-
-| Concern | Flow A | Flow B |
-| :---- | :---- | :---- |
-| Skills | normalize to canonical names | overlap against the requirement set |
-| Field notes | extract tags | compare tags to the role's domains |
-| Referrals | build and grade edges | select which edge to surface |
+The partition rule and its rationale are in
+[`DESIGN.md` §1](../../DESIGN.md#two-flows-on-two-triggers-not-one-pipeline). What this document
+adds is the contract each flow must satisfy.
 
 **Invariants.**
 
@@ -449,7 +444,9 @@ sentence and no `Probe depth on:` list, because both report a comparison that ne
 **`index.html`** is the landing page: every role with its headline numbers, opening that role's view
 on click, plus a jump-by-id box. Generated from `index_template.html` by `output.write_index`, which
 is the one writer that *reads* from `output/` — the landing page spans every role while `match` runs
-one at a time. It is skipped on a `--data-dir` run so a fixture can never rewrite it.
+one at a time. It refreshes after every `match` / `run`, including a `--data-dir` run: `write_index`
+always reads the real `data/` and `pool/`, so a fixture can only change the fixture link. Refreshing
+unconditionally is what makes `index.html` independent of the order the commands were run in.
 
 ---
 
@@ -471,7 +468,7 @@ at module level. A default `ingest` / `match` / `run` loads nothing that can ope
 
 ### The four free-text touchpoints
 
-Everything else in the system is a structured-field comparison, implemented as arithmetic.
+Why these four and nothing else: [`DESIGN.md` §1](../../DESIGN.md#where-a-model-earns-its-cost).
 
 | Touchpoint | Step | Submitted | Seam |
 | :---- | :---- | :---- | :---- |
@@ -496,39 +493,21 @@ Both imports are function-local, so the default path never executes them:
 With `--llm` set, a job costs at most **21 calls**: one per candidate for the top 20 ranked rows
 (`shortlist_size = 20`) writing `ai_summary` / `ai_probes`, and one writing the shortlist summary
 line. Both are **additive** — `build_match_row` has already written the deterministic `rationale` /
-`interview_probes`, and the model path never overwrites them. `call_candidate_brief` and
-`call_shortlist_summary` return `None` on a malformed response or an API error, and the caller treats
-`None` as an ordinary outcome: the field stays empty and the run finishes.
-
-The shortlist summary line is the one field with no deterministic counterpart — model-or-nothing, so
-a keyless run renders no line rather than a templated one.
+`interview_probes`, and the model path never overwrites them. Both `call_*` functions return `None`
+on a malformed response or an API error, and the caller treats `None` as an ordinary outcome: the
+field stays empty and the run finishes. The summary line is the one field with no deterministic
+counterpart, so a keyless run renders no line rather than a templated one.
 
 **Scoring is never a model call, with or without the flag.** Nothing in `score.py` can reach
 `llm.py` by any path.
 
 ---
 
-## 9. Production topology
+## 9. Integration surface
 
-```mermaid
-flowchart LR
-  M["HubSpot"] --> A["Flow A"]
-  E["Enrichment provider"] --> A
-  A --> P[("Talent pool")]
-  P --> B["Flow B"]
-  J["Comeet — open roles"] --> B
-  B --> V["Recruiter view"]
-  V -->|"explicit recruiter action"| C["Comeet — create candidate"]
-  V -->|"referral request"| S["Slack"]
-```
-
-**The supplied CSVs represent the output of a capture layer that runs before A1:** registration
-writes a lead to HubSpot → badge scan reconciles attendance → staff add a structured annotation →
-a licensed provider enriches on profile URL → canonical skill resolution → contact-property write.
-
-Enrichment constraints the design absorbs: rate limited, so batched and queued rather than
-synchronous; partial coverage, so unmatched contacts are flagged rather than dropped; per-lookup
-cost, so enrichment runs **once per person in Flow A** and never per query in Flow B.
+The topology, the capture layer and the scale envelope are in
+[`DESIGN.md` §3–§4](../../DESIGN.md#3-production-integrations). What belongs here is the per-step
+mapping: what each pipeline step reads today, and what replaces it in production.
 
 | Step | Submitted | Production |
 | :---- | :---- | :---- |
@@ -537,21 +516,20 @@ cost, so enrichment runs **once per person in Flow A** and never per query in Fl
 | A3 | dictionary lookup | dictionary + model resolution for misses, cached back |
 | A4 | token extraction | model returning structured tags, or structured capture upstream |
 | A5 | parse delimited id list | connection data from the provider; roster from the HR system |
-| A6–A8 | roster comparison, write CSVs | unchanged; write HubSpot contact properties |
+| A6 | roster comparison | unchanged |
+| A7 | tier from stored signals | unchanged; `referral_feedback` written back from HubSpot |
+| A8 | write two CSVs | write HubSpot contact properties — HubSpot is the system of record |
 | B1 | read three CSV columns | Comeet role by id, parsed from prose by a model |
 | B2 | read two CSVs | query contact properties for the pool segment |
 | **B3–B6** | **arithmetic** | **unchanged** |
+| B7 | opt-in model call | same call, always on |
 | B8 | write CSV + HTML | same, plus in-app view, Comeet creation on explicit action, Slack referral request |
 
-**B3 through B6 are byte-for-byte identical between submission and production.** The scoring path has
-no integration dependency, which is what makes the ranking defensible.
-
-Two external writes exist. The pool write is idempotent on `hubspot_id`. The ATS write is gated on an
-explicit recruiter action. **Nothing advances a person into a hiring process automatically.**
-
-**Scale envelope.** ~30 events/year × 30–100 attendees = 900–3,000 records/year; 5,000–9,000 rows at
-three years; five recruiters, tens of concurrent roles. Flow A decomposes into one scheduled worker
-per step with retries and queues, without restructuring. Flow B remains a single-pass scan.
+**Two boundaries this table has to hold.** B3 through B6 are byte-for-byte identical between
+submission and production — the scoring path has no integration dependency, which is what makes the
+ranking testable without one. And of the two external writes, the pool write is idempotent on
+`hubspot_id` while the ATS write is gated on an explicit recruiter action: **nothing advances a
+person into a hiring process automatically.**
 
 ---
 

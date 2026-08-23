@@ -235,10 +235,12 @@ def run_match(job_id: str, use_llm: bool, data_dir: Path, pool_dir: Path, output
     print(f"wrote {len(match_rows)} matches to {matches_path}")
     print(f"wrote recruiter view to {html_path}")
 
-    # Keep the landing page in step with the reports it links, but only on a
-    # real-data run: a --data-dir fixture must never rewrite index.html.
-    if output_dir == OUTPUT_DIR:
-        run_index()
+    # Keep the landing page in step with the reports it links. Safe after a
+    # --data-dir run too: run_index always reads the real data/ and pool/,
+    # never the fixture's, so the only thing a fixture run can change is the
+    # fixture link itself. Refreshing unconditionally is what makes
+    # index.html independent of the order the commands were run in.
+    run_index()
 
 
 def main(argv=None) -> None:
