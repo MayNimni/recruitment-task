@@ -64,6 +64,12 @@
   .warn .fg { stroke:var(--ring-warn); } .low .fg { stroke:var(--ring-low); }
   .nm { font-size:19px; margin-bottom:2px; }
   .meta { color:var(--muted); font-size:13.5px; margin-bottom:9px; }
+  .unver { font-size:12.5px; line-height:1.5; color:var(--muted); background:var(--rail);
+    border-radius:7px; padding:9px 11px; margin:9px 0 2px; max-width:640px; }
+  .unver .tag { display:inline-block; font-size:11px; letter-spacing:.6px; text-transform:uppercase;
+    color:var(--ring-warn); border:1px solid var(--ring-warn); border-radius:4px;
+    padding:1px 5px; margin-right:7px; }
+  .bd tr.off td { color:#a5a199; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
   .chip { font-size:12.5px; padding:3px 9px; border-radius:5px; }
   .ok { background:var(--ok-bg); color:var(--ok-fg); }
@@ -197,9 +203,11 @@ if (SUMMARY) {
   document.getElementById('summary').remove();
 }
 
+const basis = c => (c.b && c.b.length ? c.b : KEYS);
 const score = c => {
-  const sum = KEYS.reduce((a, k) => a + w[k], 0) || 1;
-  return KEYS.reduce((a, k) => a + c.v[k] * w[k], 0) / sum * 100;
+  const keys = basis(c);
+  const sum = keys.reduce((a, k) => a + w[k], 0) || 1;
+  return keys.reduce((a, k) => a + c.v[k] * w[k], 0) / sum * 100;
 };
 const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
@@ -243,15 +251,24 @@ function refHtml(c) {
 }
 
 function breakdown(c) {
-  const sum = KEYS.reduce((a, k) => a + w[k], 0) || 1;
-  const body = KEYS.map(k => {
+  const keys = basis(c);
+  const sum = keys.reduce((a, k) => a + w[k], 0) || 1;
+  const body = keys.map(k => {
     const pts = c.v[k] * w[k] / sum * 100;
     return `<tr><td>${LABELS[k]}</td><td class="v">${c.v[k].toFixed(2)} × ${w[k]}</td>
       <td class="p">${pts.toFixed(1)}</td></tr>`;
   }).join('');
-  return `<div class="bd"><table><tbody>${body}
-    <tr class="sum"><td>Match score</td><td class="v"></td>
-    <td class="p">${Math.round(score(c))}</td></tr></tbody></table></div>`;
+  const skipped = KEYS.filter(k => !keys.includes(k));
+  const skippedRows = skipped.map(k =>
+    `<tr class="off"><td>${LABELS[k]}</td><td class="v">not scored</td><td class="p">—</td></tr>`
+  ).join('');
+  const foot = skipped.length
+    ? `<tr class="sum"><td>Match score</td>
+       <td class="v">out of ${sum}, not 100</td>
+       <td class="p">${Math.round(score(c))}</td></tr>`
+    : `<tr class="sum"><td>Match score</td><td class="v"></td>
+       <td class="p">${Math.round(score(c))}</td></tr>`;
+  return `<div class="bd"><table><tbody>${body}${skippedRows}${foot}</tbody></table></div>`;
 }
 
 function briefHtml(c) {
@@ -264,10 +281,23 @@ function briefHtml(c) {
 
 function card(c) {
   const v = score(c);
-  const chips = [
+  // A missing skill is only news when the skills component was scored at all.
+  // On an unverified record there is no skill list to compare against, so the
+  // required skills are unassessed, not absent — showing them as red gaps
+  // reads as "this person lacks them", which the data does not say.
+  const chips = c.u ? '' : [
     ...c.s.map(p => `<span class="chip sem">${esc(p[0])} → ${esc(p[1])}</span>`),
     ...c.x.map(m => `<span class="chip gap">${esc(m)} missing</span>`),
   ].join('');
+  const meta = [c.t, c.c, (c.y || c.y === 0) ? `${c.y} yrs` : null, c.l]
+    .filter(Boolean).map(esc).join(' · ');
+  const unver = c.u ? `<div class="unver">
+    <span class="tag">Unverified</span>
+    No LinkedIn profile matched this contact — everything below is what they gave at the
+    conference. Scored on ${basis(c).map(k => LABELS[k].toLowerCase()).join(', ')} only, out of
+    ${basis(c).reduce((a, k) => a + w[k], 0)} rather than 100, so missing data does not read as
+    poor fit. Skills, experience, industry and past companies are unassessed, not absent.
+  </div>` : '';
   const note = c.notes ? `<div class="note">
     <div class="note-attr">Spoken to at ${esc(c.conf)}${c.cd ? ', ' + esc(c.cd) : ''}</div>
     <div class="note-quote">&ldquo;${esc(c.notes)}&rdquo;</div>
@@ -277,7 +307,8 @@ function card(c) {
     <button class="ringbtn" data-id="${c.id}" aria-expanded="${open_.has(c.id)}"
       aria-label="Show how ${esc(c.n)} scored">${ring(v)}</button>
     <div><div class="nm">${esc(c.n)}</div>
-      <div class="meta">${esc(c.t)} · ${esc(c.c)} · ${c.y} yrs · ${esc(c.l)}</div>
+      <div class="meta">${meta}</div>
+      ${unver}
       <div class="chips">${chips}</div>${note}</div>
     ${refHtml(c)}
     ${briefHtml(c)}

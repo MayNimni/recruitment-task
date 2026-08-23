@@ -4,6 +4,7 @@
     python main.py match --job JOB001      # Flow B. reads pool/ + data/job_openings.csv, writes output/
     python main.py match --job JOB001 --llm  # Flow B + B7 model seam (ai_summary/ai_probes on the shortlist)
     python main.py run   --job JOB001      # both, in order
+    python main.py index                   # rebuild index.html, the landing page
 
     python main.py ingest --data-dir data/edge_cases           # reads data/edge_cases/, writes pool/edge_cases/
     python main.py match --job JOB001 --data-dir data/edge_cases  # writes output/edge_cases/
@@ -23,7 +24,6 @@ edge into one row.
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -34,6 +34,7 @@ DATA_DIR = REPO_ROOT / "data"
 POOL_DIR = REPO_ROOT / "pool"
 OUTPUT_DIR = REPO_ROOT / "output"
 TEMPLATE_PATH = REPO_ROOT / "recruiter_view.html"
+INDEX_TEMPLATE_PATH = REPO_ROOT / "index_template.html"
 
 POOL_LIST_COLUMNS = [
     "past_companies", "past_titles", "skills_raw", "skills_canonical",
@@ -62,6 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--llm", action="store_true",
         help="call the B7 model seam for the top shortlist_size candidates' ai_summary/ai_probes "
              "(requires ANTHROPIC_API_KEY); without it those two columns stay empty",
+    )
+
+    subparsers.add_parser(
+        "index",
+        help="rebuild index.html, the landing page linking every job's recruiter view",
     )
 
     run_parser = subparsers.add_parser("run", help="ingest then match")
@@ -94,6 +100,27 @@ def run_ingest(data_dir: Path, pool_dir: Path) -> None:
 
     print(f"wrote {len(pool_df)} pool rows to {pool_path}")
     print(f"wrote {len(edges_df)} referral edges to {edges_path}")
+
+
+def run_index() -> None:
+    """Rebuilds index.html from whatever reports currently exist under output/.
+
+    Always describes the real data/ — a fixture run must not rewrite the
+    landing page — so it takes no --data-dir and reads POOL_DIR/OUTPUT_DIR
+    directly. Safe to run at any time; a job with no report yet simply renders
+    as a card naming the command that produces one.
+    """
+    from ingest import load_jobs
+    import output
+
+    pool_rows, _ = read_pool(POOL_DIR)
+    conference_count = len({r["conference_name"] for r in pool_rows if r.get("conference_name")})
+    index_path = output.write_index(
+        load_jobs(DATA_DIR), len(pool_rows), conference_count,
+        INDEX_TEMPLATE_PATH, OUTPUT_DIR, REPO_ROOT,
+        fixture_output_dir=OUTPUT_DIR / "edge_cases",
+    )
+    print(f"wrote landing page to {index_path}")
 
 
 def read_pool(pool_dir):
@@ -182,17 +209,14 @@ def run_match(job_id: str, use_llm: bool, data_dir: Path, pool_dir: Path, output
         for scored in ranked
     ]
 
-    # No deterministic fallback for the summary line (fix 2, DECISIONS.md-style
-    # note): it's model-or-nothing, so an --llm-less run — or a failed model
-    # call — leaves it "" and write_recruiter_view renders no line at all.
+    # The shortlist summary line is model-or-nothing by design: there is no
+    # deterministic template behind it, so a run without --llm — or a failed
+    # model call — leaves it "" and write_recruiter_view renders no line at all.
     summary_line = ""
 
     if use_llm:
         import llm
-        # Diagnostic prints for the "why is it saying TEMPLATE" class of bug:
-        # an export in a different terminal never reaches this process, so
-        # print what this process actually sees, not what the shell claims.
-        print(f"ANTHROPIC_API_KEY visible to this process: {bool(os.environ.get('ANTHROPIC_API_KEY'))}")
+
         client = llm.build_client()
         output.apply_llm_briefs(match_rows, pool_rows_by_id, requirements, client)
         filled = sum(1 for r in match_rows if r["ai_summary"])
@@ -211,10 +235,20 @@ def run_match(job_id: str, use_llm: bool, data_dir: Path, pool_dir: Path, output
     print(f"wrote {len(match_rows)} matches to {matches_path}")
     print(f"wrote recruiter view to {html_path}")
 
+    # Keep the landing page in step with the reports it links, but only on a
+    # real-data run: a --data-dir fixture must never rewrite index.html.
+    if output_dir == OUTPUT_DIR:
+        run_index()
+
 
 def main(argv=None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "index":
+        run_index()
+        return
+
     data_dir, pool_dir, output_dir = resolve_dirs(args.data_dir)
 
     if args.command == "ingest":

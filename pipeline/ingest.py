@@ -18,6 +18,7 @@ JOBS_FILE = "job_openings.csv"
 SKILL_ALIASES_FILE = "skill_aliases.json"
 TITLE_FAMILIES_FILE = "title_families.json"
 COMPANY_DOMAINS_FILE = "company_domains.json"
+REFERRAL_FEEDBACK_FILE = "referral_feedback.csv"
 
 
 def load_csv(data_dir: Path, filename: str) -> pd.DataFrame:
@@ -68,6 +69,28 @@ def load_company_domains(data_dir: Path) -> dict:
     return load_json_config(data_dir, COMPANY_DOMAINS_FILE)
 
 
+def load_referral_feedback(data_dir: Path) -> dict:
+    """A1, optional. Returns {(hubspot_id, employee_id): feedback} or {} if the
+    file is absent.
+
+    referral_feedback is not derived from any source record — in production it
+    is written by the recruiter through HubSpot after they ask the colleague,
+    and ingestion only carries whatever is already on record. This file is that
+    record. data/ ships without one, so every real edge is 'not_requested';
+    data/edge_cases/ ships one so the retired-edge branch (SPEC.md B5) is
+    reproduced by `ingest` rather than hand-written into pool/.
+    """
+    path = data_dir / REFERRAL_FEEDBACK_FILE
+    if not path.exists():
+        return {}
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    return {
+        (row["hubspot_id"], row["employee_id"]): row["referral_feedback"]
+        for _, row in df.iterrows()
+        if row["referral_feedback"].strip()
+    }
+
+
 def load_sources(data_dir) -> dict:
     """A1. Returns the four source dataframes plus the three config dicts.
 
@@ -86,4 +109,5 @@ def load_sources(data_dir) -> dict:
         "skill_aliases": load_skill_aliases(data_dir),
         "title_families": load_title_families(data_dir),
         "company_domains": load_company_domains(data_dir),
+        "referral_feedback": load_referral_feedback(data_dir),
     }

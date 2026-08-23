@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talent pool — open roles</title>
+<style>
+  :root {
+    --paper:#f7f5f0; --ink:#1c1c1a; --muted:#6f6b63; --line:#e2ded4;
+    --card:#fffefb; --rail:#efece4;
+    --ring:#1f5fa8; --ok-bg:#e4f0e2; --ok-fg:#2f5e2a;
+    --sem-bg:#e0ebf6; --sem-fg:#1f5fa8;
+    --gap-bg:#f6e2e0; --gap-fg:#9c3b31;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:32px 28px 64px; background:var(--paper); color:var(--ink);
+    font:15px/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1180px; margin:0 auto; }
+  header { display:flex; flex-wrap:wrap; gap:24px; justify-content:space-between;
+    align-items:flex-end; padding-bottom:18px; border-bottom:1px solid var(--line); }
+  h1 { font-size:34px; font-weight:400; letter-spacing:-.4px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; }
+  .stats { display:flex; gap:38px; }
+  .stat b { display:block; font-size:30px; font-weight:400; line-height:1; }
+  .stat span { font-size:12.5px; color:var(--muted); }
+
+  .jump { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    background:var(--rail); border-radius:10px; padding:16px 18px; margin:24px 0 8px; }
+  .jump label { font-size:13.5px; color:var(--muted); }
+  .jump input { font:inherit; font-size:14px; padding:7px 11px; width:150px;
+    border:1px solid #d5d1c6; border-radius:7px; background:var(--card); color:var(--ink);
+    text-transform:uppercase; letter-spacing:.5px; }
+  .jump input::placeholder { text-transform:none; letter-spacing:0; color:#a5a199; }
+  .jump button { font:inherit; font-size:13.5px; padding:8px 16px; cursor:pointer;
+    border:0; border-radius:7px; background:var(--ring); color:#fff; }
+  .jump button:hover { background:#184c86; }
+  input:focus-visible, button:focus-visible, .job:focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
+  .jump .err { font-size:13px; color:var(--gap-fg); }
+  .jump .hint { font-size:12.5px; color:#a5a199; margin-left:auto; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:16px; }
+  .job { display:block; text-decoration:none; color:inherit;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px 16px;
+    transition:border-color .12s, transform .12s; }
+  .job:hover { border-color:var(--ring); transform:translateY(-1px); }
+  .job.empty { background:var(--rail); border-style:dashed; cursor:default; }
+  .job.empty:hover { border-color:var(--line); transform:none; }
+  .jid { display:inline-block; font-size:11.5px; letter-spacing:.7px; color:var(--sem-fg);
+    background:var(--sem-bg); border-radius:5px; padding:2px 7px; font-variant-numeric:tabular-nums; }
+  .job h2 { font-size:19px; font-weight:400; margin:9px 0 3px; letter-spacing:-.2px; }
+  .job .meta { font-size:13px; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:5px; margin:12px 0 0; }
+  .chip { font-size:11.5px; padding:2px 7px; border-radius:5px; background:var(--rail); color:var(--muted); }
+  .jstats { display:flex; gap:22px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .jstats div b { display:block; font-size:20px; font-weight:400; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .jstats div span { font-size:11.5px; color:var(--muted); }
+  .top { margin-top:12px; font-size:13px; color:var(--muted); }
+  .top b { color:var(--ink); font-weight:500; }
+  .top .sc { color:var(--ok-fg); background:var(--ok-bg); border-radius:5px;
+    padding:1px 6px; font-variant-numeric:tabular-nums; }
+  .cmd { display:block; margin-top:12px; font:12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color:var(--muted); background:var(--card); border:1px solid var(--line);
+    border-radius:6px; padding:7px 9px; word-break:break-all; }
+
+  .note { margin-top:34px; padding-top:18px; border-top:1px solid var(--line);
+    font-size:13.5px; color:var(--muted); line-height:1.6; max-width:760px; }
+  .note h3 { font-size:14px; font-weight:500; color:var(--ink); margin:0 0 7px; }
+  .note + .note { margin-top:22px; }
+  .note code { font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background:var(--rail); border-radius:4px; padding:1px 5px; }
+  .note a { color:var(--ring); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Talent pool</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="s-pool">0</b><span>in the pool</span></div>
+      <div class="stat"><b id="s-conf">0</b><span>conferences</span></div>
+      <div class="stat"><b id="s-jobs">0</b><span>open roles</span></div>
+    </div>
+  </header>
+
+  <div class="jump">
+    <label for="code">Open a role by id</label>
+    <input id="code" placeholder="e.g. JOB001" autocomplete="off" spellcheck="false">
+    <button id="go">Open report</button>
+    <span class="err" id="err"></span>
+    <span class="hint">or pick one below</span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="note" id="fixture-note"></div>
+
+  <div class="note">
+    <h3>What you are looking at</h3>
+    Each card opens a self-contained recruiter view for that role — the ranked shortlist, every
+    score broken into its seven components, and the colleague best placed to make an introduction.
+    Nothing here needs a server or an API key; these are static files, already generated.
+    The matching <code>_matches.csv</code> for each role sits beside its report in
+    <code>output/</code>.
+    <br><br>
+    The reports are produced by the pipeline, not written by hand. To regenerate them — after
+    changing the data, the weights or the scoring — run <code>python pipeline/main.py run --job JOB001</code>
+    from the repo root and reopen this page. See <a href="README.md">README.md</a> for setup and the
+    full command list.
+  </div>
+</div>
+
+<script>
+const JOBS = [{"id": "JOB001", "title": "Senior ML Engineer", "department": "AI/ML", "seniority": "Senior", "required": ["Python", "PyTorch", "Computer Vision", "Object Detection", "AWS"], "href": "output/JOB001_recruiter_view.html", "scored": 75, "above70": 6, "withReferral": 43, "topName": "Lucas Evans", "topScore": 89}, {"id": "JOB002", "title": "Backend Engineer", "department": "Engineering", "seniority": "Mid-Senior", "required": ["Python", "Go", "Kafka", "AWS", "Microservices", "REST APIs"], "href": "output/JOB002_recruiter_view.html", "scored": 75, "above70": 4, "withReferral": 43, "topName": "Chris Lee", "topScore": 83}, {"id": "JOB003", "title": "Senior Product Manager - Sports Data", "department": "Product", "seniority": "Senior", "required": ["Product Management", "Sports Analytics", "API Products", "Stakeholder Management"], "href": "output/JOB003_recruiter_view.html", "scored": 75, "above70": 2, "withReferral": 43, "topName": "Elijah Allen", "topScore": 80}, {"id": "JOB004", "title": "Data Engineer", "department": "Data", "seniority": "Mid", "required": ["Python", "Spark", "dbt", "SQL", "AWS", "Airflow"], "href": "output/JOB004_recruiter_view.html", "scored": 75, "above70": 8, "withReferral": 43, "topName": "Scarlett Green", "topScore": 95}];
+const POOL = {"size": 75, "conferences": 4};
+const FIXTURE = {"rows": 13, "href": "output/edge_cases/JOB001_recruiter_view.html"};
+
+const grid = document.getElementById('grid');
+const byId = {};
+
+document.getElementById('s-pool').textContent = POOL.size;
+document.getElementById('s-conf').textContent = POOL.conferences;
+document.getElementById('s-jobs').textContent = JOBS.length;
+document.getElementById('sub').textContent =
+  'Conference attendees, enriched once and ranked against an open role on demand';
+
+for (const j of JOBS) {
+  byId[j.id] = j;
+  const el = document.createElement(j.href ? 'a' : 'div');
+  el.className = 'job' + (j.href ? '' : ' empty');
+  if (j.href) { el.href = j.href; }
+
+  const skills = j.required.map(s => `<span class="chip">${esc(s)}</span>`).join('');
+  const head =
+    `<span class="jid">${esc(j.id)}</span>` +
+    `<h2>${esc(j.title)}</h2>` +
+    `<div class="meta">${esc(j.department)} · ${esc(j.seniority)}</div>` +
+    `<div class="chips">${skills}</div>`;
+
+  el.innerHTML = j.href
+    ? head +
+      `<div class="jstats">` +
+        `<div><b>${j.scored}</b><span>scored</span></div>` +
+        `<div><b>${j.above70}</b><span>above 70</span></div>` +
+        `<div><b>${j.withReferral}</b><span>with a referral path</span></div>` +
+      `</div>` +
+      `<div class="top">Top match: <b>${esc(j.topName)}</b> <span class="sc">${j.topScore}</span></div>`
+    : head +
+      `<div class="top">No report generated yet.</div>` +
+      `<code class="cmd">python pipeline/main.py run --job ${esc(j.id)}</code>`;
+
+  grid.appendChild(el);
+}
+
+const note = document.getElementById('fixture-note');
+if (FIXTURE) {
+  note.innerHTML =
+    `<h3>Edge-case fixture</h3>` +
+    `A synthetic ${FIXTURE.rows}-row pool built to exercise the branches the supplied data never ` +
+    `reaches — an attendee with no LinkedIn match, an empty skill list, a referral retired as ` +
+    `insufficient, a title in no known family. ` +
+    `<a href="${FIXTURE.href}">Open the fixture report</a>, or see the README's ` +
+    `"Edge case handling" section for the full list.`;
+} else {
+  note.remove();
+}
+
+const input = document.getElementById('code');
+const err = document.getElementById('err');
+
+function open_(raw) {
+  const code = (raw || '').trim().toUpperCase();
+  if (!code) { err.textContent = 'Enter a role id.'; return; }
+  const j = byId[code];
+  if (!j) { err.textContent = `No role ${code}. Try ${JOBS.map(x => x.id).join(', ')}.`; return; }
+  if (!j.href) { err.textContent = `${code} has no report yet — see its card below.`; return; }
+  err.textContent = '';
+  window.location.href = j.href;
+}
+
+document.getElementById('go').addEventListener('click', () => open_(input.value));
+input.addEventListener('keydown', e => { if (e.key === 'Enter') open_(input.value); });
+input.addEventListener('input', () => { err.textContent = ''; });
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

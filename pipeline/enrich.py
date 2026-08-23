@@ -401,6 +401,7 @@ def build_pool(sources: dict):
     profiles = sources["profiles"]
     employees = sources["employees"]
     aliases = sources["skill_aliases"]
+    feedback = sources.get("referral_feedback", {})
 
     merged = join_profiles(attendees, profiles)
     employees_by_id = employees.set_index("employee_id", drop=False)
@@ -482,7 +483,7 @@ def build_pool(sources: dict):
     for key in edges_order:
         edge = edges_by_key[key]
         edge["tier"] = assign_tier(edge)
-        edge["referral_feedback"] = "not_requested"
+        edge["referral_feedback"] = feedback.get(key, "not_requested")
         edge_rows.append(edge)
 
     pool_df = pd.DataFrame(pool_rows, columns=POOL_COLUMNS)

@@ -1,6 +1,11 @@
+# Verified against pandas 2.3.3 and 3.0.5 on Python 3.14.6: both produce
+# byte-identical output for all four jobs and the edge-case fixture.
 pandas>=2.0
 
-# Optional, build-time only: required solely by pipeline/build_aliases.py, which
-# regenerates data/skill_aliases.json offline. The pipeline itself (main.py and
-# everything it imports) never calls a model and does not need this package.
+# Optional — not needed to run or evaluate this project. Required only by the
+# two opt-in model paths, neither of which a default run touches:
+#   pipeline/build_aliases.py             offline, regenerates data/skill_aliases.json
+#   pipeline/main.py match --job X --llm  the B7 seam, live (needs ANTHROPIC_API_KEY)
+# Without this package installed, `ingest`, `match` and `run` work exactly as
+# documented — they never import it. See README "Where the model is used".
 # anthropic>=0.40
