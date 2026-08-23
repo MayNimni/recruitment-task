@@ -1,8 +1,21 @@
 # README
 
-Conference-attendee talent pool pipeline: enrich attendees once per event (Flow A), then rank the
-pool against an open role on demand (Flow B). Full rationale is in `DECISIONS.md`, the technical
-design is in `ARCHITECTURE.md`, and the exact implementation contract is in `SPEC.md`.
+Conference-attendee talent pool pipeline: enrich attendees once per event (**Flow A**), then rank
+the pool against an open role on demand (**Flow B**).
+
+Two design documents sit behind this one — [`DECISIONS.md`](DECISIONS.md) for **why**, and
+[`SPEC.md`](SPEC.md) for **what and how**.
+
+## Start here
+
+**Open `index.html` at the repo root** (double click — no server, no API key). It lists the four open
+roles with their headline numbers, and opening one goes straight to that role's recruiter view. There
+is also a box to jump to a role by id. Every report it links is already committed, so the page works
+on a fresh clone before you run anything.
+
+`index.html` is generated, not hand-written: `match` and `run` refresh it, and
+`python3 pipeline/main.py index` rebuilds it on its own. A role whose report hasn't been generated
+yet renders as a card naming the command that produces it.
 
 ## Setup
 
@@ -23,17 +36,6 @@ pip install -r requirements.txt
 
 `requirements.txt` also lists `anthropic`, commented out. It is needed only by the two opt-in model
 paths — `pipeline/build_aliases.py` and `match --llm` — and by neither flow's default run.
-
-## Start here
-
-**Open `index.html` at the repo root** (double click — no server, no API key). It lists the four open
-roles with their headline numbers, and opening one goes straight to that role's recruiter view. There
-is also a box to jump to a role by id. Every report it links is already committed, so the page works
-on a fresh clone before you run anything.
-
-`index.html` is generated, not hand-written: `match` and `run` refresh it, and
-`python3 pipeline/main.py index` rebuilds it on its own. A role whose report hasn't been generated
-yet renders as a card naming the command that produces it.
 
 ## How to run
 
@@ -168,7 +170,7 @@ deterministic in every run; the fourth (B7) is the one `--llm` activates: `resol
 the job parser `parse_job` (B1), and the rationale/probe builders `build_rationale` /
 `build_interview_probes` (B7, one seam covering both). Each carries a docstring naming its
 production model implementation, so the pipeline runs with no API key and returns identical output
-on every run — see `ARCHITECTURE.md` §8 for the full model-boundary table.
+on every run — see `SPEC.md` §8 for the full model-boundary table.
 
 **Measured effect.** Before `build_aliases.py` resolved "Sports CV" and "Event Detection" against
 Marcus Reid's LinkedIn skills, he ranked 5th for JOB001 at a match score of 75, missing 3 of the 5
@@ -180,20 +182,28 @@ the two states; the entire swing comes from the generated alias dictionary. See
 
 ## Design doc
 
-- [`DECISIONS.md`](DECISIONS.md) — why: assumptions, scoring rationale, evidence from the data, the
-  model boundary, production integrations, open questions. Wins on any disagreement with
-  `ARCHITECTURE.md` or `SPEC.md`.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — flow diagrams, module map, data model, failure modes,
-  production topology.
-- [`SPEC.md`](SPEC.md) — the implementation contract: function signatures, exact scoring rules,
-  exact column names.
+| Document | Holds | Read it for |
+| :---- | :---- | :---- |
+| [`DECISIONS.md`](DECISIONS.md) | **Why.** The seven assumptions the brief asks about, scoring rationale, evidence from the data, the model boundary, production integrations, open questions. | The reasoning. Wins on any disagreement with `SPEC.md`. |
+| [`SPEC.md`](SPEC.md) | **What and how.** System shape, flow diagrams, exact scoring rules, column contracts, data model, module map, presentation contract, production topology, failure modes. | The implementation contract. |
+
+The seven assumption questions from the brief are answered one by one in
+[`DECISIONS.md` §2](DECISIONS.md#2-the-seven-assumptions), with a summary table at the top of that
+section.
 
 ## Assumptions
 
-All assumptions and their rationale are in [`DECISIONS.md` §2](DECISIONS.md#2-assumptions) —
-domain relevance as a weighted score rather than a filter, how an unverified contact is scored and
-kept, how referral tiers and mutual-connection counts are treated as estimates rather than points,
-ATS flagging, refresh cadence, trigger ownership, and privacy/GDPR handling.
+All seven are answered in [`DECISIONS.md` §2](DECISIONS.md#2-the-seven-assumptions):
+
+| # | Question | Answer in one line |
+| :--- | :---- | :---- |
+| 1 | Defining domain relevance | A weighted, transparent score — never a filter |
+| 2 | No LinkedIn profile match | Kept and flagged, scored over the three components that exist |
+| 3 | 1 mutual connection vs. 3 | Neither scores points; both become *who to ask*, graded by tier |
+| 4 | Candidates already in the ATS | Flagged via `ats_status`, read-only lookup |
+| 5 | Refresh cadence | Ingest per conference; match on demand; re-enrich every 6–12 months |
+| 6 | Who triggers it | Ingestion automatic, matching recruiter-initiated, ATS handoff manual |
+| 7 | Privacy / GDPR | Pool lives outside the ATS, soft opt-in, provenance and deletion mandatory |
 
 ## Edge case handling
 
@@ -202,7 +212,7 @@ never exercises, are now demonstrated by a fixture.** All 75 conference attendee
 `data/conference_attendees.csv` still match a row in `data/linkedin_profiles.csv` on `linkedin_url` —
 confirmed by running Flow A and checking `pool/talent_pool.csv`, where every row has
 `unverified = False` — so nothing in the *supplied* dataset takes the unverified path, and the same
-is true for the other data-shape failure modes in `ARCHITECTURE.md` §10. `data/edge_cases/` adds a small,
+is true for the other data-shape failure modes in `SPEC.md` §10. `data/edge_cases/` adds a small,
 unmistakably-fake synthetic fixture — the same seven filenames `data/` holds, plus the optional
 `referral_feedback.csv` described below, with the real WSC employee roster reused where possible —
 built to hit exactly the branches the supplied data leaves cold: no `linkedin_url` at all,
@@ -220,7 +230,7 @@ python pipeline/main.py match --job JOB001 --data-dir data/edge_cases
 real `pool/` or `output/`; the fixture's own output is committed at `output/edge_cases/`. The
 referral-specific states (worked together with dates, shared employer with no overlap, 3+ mutual
 connections, 1–2, no referral path, a retired edge) are tabulated with exact recruiter-facing strings
-in `DECISIONS.md` §2.3. See `DECISIONS.md` §2.2 and `ARCHITECTURE.md` §10 for the full statement of
+in `DECISIONS.md` §2.3. See `DECISIONS.md` §2.2 and `SPEC.md` §10 for the full statement of
 these failure modes, including the two (an empty `pool/` directory, an unknown `job_id`) that are
 CLI-argument failures rather than data shapes and so stay outside this fixture.
 
@@ -238,12 +248,12 @@ that this person had been assessed and found wanting on skills. The card now car
 and past companies are *unassessed, not absent*; the expandable breakdown lists only the three
 scored components and labels the total `out of 37, not 100`; the gap chips are suppressed; and
 `rationale` / `interview_probes` drop the `0/5 required skills matched` sentence for a line that
-says the profile is missing and the first call has to establish the basics. `SPEC.md` §B6 carries
+says the profile is missing and the first call has to establish the basics. `SPEC.md` §7 carries
 the full rule.
 
 The ranking itself is left as-is deliberately — a thin record that matches on title and on what a
 recruiter heard at the booth *is* worth a call; it is worth a call with the record's thinness on
-screen, which is now what happens. `DECISIONS.md` §3.8 lists surfacing it as a sort option as an
+screen, which is now what happens. `DECISIONS.md` §5 lists surfacing it as a sort option as an
 open question.
 
 ## Executive summary for non-technical HR

@@ -1,6 +1,6 @@
 """Flow A steps 2-8: join, skill normalization, note tagging, referral edges,
 tiering, and the pool write. Every function here is job-independent — none of
-them may read job_openings.csv (ARCHITECTURE.md §1 invariants).
+them may read job_openings.csv (SPEC.md §0 invariants).
 
 List-valued fields move through this module as Python lists and are only
 joined into ';'-strings at the very end, in build_pool / write_pool.
@@ -103,7 +103,7 @@ def join_profiles(attendees: pd.DataFrame, profiles: pd.DataFrame) -> pd.DataFra
     """A2. Left join attendees to profiles on normalized linkedin_url.
 
     A row with no match is kept: unverified=True and every profile-derived
-    column is ''. No name-based fallback (DECISIONS.md §4.2 / §2.2).
+    column is ''. No name-based fallback (DECISIONS.md §2.2).
     """
     left = attendees.copy()
     right = profiles.copy()
@@ -174,7 +174,7 @@ def extract_note_tags(note, aliases: dict):
 
     Same seam pattern as resolve_unknown_alias: in production this extractor
     is replaced by a model returning structured signal tags (DECISIONS.md §6.1
-    / ARCHITECTURE.md §9.2). Note *value* is not computed here — that is B3.
+    / SPEC.md §9). Note *value* is not computed here — that is B3.
     """
     note = "" if note is None else str(note)
     flagged_on_site = bool(note.strip())
@@ -293,7 +293,7 @@ def company_tokens(entry: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) ->
     >= 4. Shared by both sides of the A6 comparison. Whole-token equality
     only — never substring matching, which is what would incorrectly pair a
     candidate from Intel with an employee from an IDF Intelligence Unit
-    (SPEC.md §A6, DECISIONS.md §4.3/§2.3).
+    (SPEC.md §A6, DECISIONS.md §2.3).
     """
     text = re.sub(r"\([^)]*\)", "", entry).lower()
     tokens = set()

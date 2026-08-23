@@ -1,6 +1,6 @@
 """Flow B steps 5-8: referral selection, rationale/probe templates, and the
 two output writers. output.py must not import score.py or enrich.py
-(ARCHITECTURE.md §7) — everything it needs arrives as plain data from main.py.
+(SPEC.md §8) — everything it needs arrives as plain data from main.py.
 apply_llm_briefs is the one exception: it imports llm.py, the standalone B7
 model seam, lazily and only when called (main.py's `match --llm` path) — llm.py
 is not a Flow A/B step owner, just an isolated model-call boundary, so it is
@@ -308,7 +308,7 @@ def apply_llm_briefs(match_rows: list, pool_rows_by_id: dict, requirements: dict
 
     Called only when main.py was invoked with `match --llm`; without that flag
     this function is never reached and the two columns stay empty (README.md /
-    ARCHITECTURE.md §8: no model call without an explicit opt-in).
+    SPEC.md §8: no model call without an explicit opt-in).
     """
     import llm
 
@@ -540,7 +540,7 @@ def write_index(jobs_df, pool_size: int, conference_count: int, template_path,
 def build_data_items(match_rows: list, pool_rows_by_id: dict) -> list:
     """Builds the recruiter-view DATA array, in the same rank order as the
     matches CSV, from the same in-memory rows build_match_row produced
-    (SPEC.md §B6: "written in the same call from the same in-memory rows").
+    (SPEC.md §B8: "written in the same call from the same in-memory rows").
     """
     return [
         _row_to_data_item(row, pool_rows_by_id[row["hubspot_id"]])

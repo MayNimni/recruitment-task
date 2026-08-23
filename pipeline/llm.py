@@ -4,7 +4,7 @@ output.py's deterministic rationale/interview_probes template.
 
 Only imported when `python main.py match --llm` is used — main.py and output.py
 run with no API key otherwise, and build_rationale/build_interview_probes stay the
-default (ARCHITECTURE.md §8). Client construction mirrors build_aliases.py's
+default (SPEC.md §8). Client construction mirrors build_aliases.py's
 call_model: same ANTHROPIC_API_KEY / anthropic-package checks, same model id.
 """
 

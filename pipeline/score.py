@@ -1,8 +1,8 @@
 """Flow B steps 1-5: parse the job, score the seven components, normalize for
 unverified candidates, and rank. Arithmetic only — no network, no clock, no
-randomness (ARCHITECTURE.md §1 invariants).
+randomness (SPEC.md §0 invariants).
 
-score.py must not import enrich.py or output.py (ARCHITECTURE.md §7: "No
+score.py must not import enrich.py or output.py (SPEC.md §8: "No
 module imports another peer"), so the handful of tiny string/list helpers it
 needs are re-declared locally rather than shared.
 """
@@ -74,7 +74,7 @@ def normalize_job_skill_list(raw_skills, aliases: dict) -> list:
     match on the alias table's own canonical values, then the alias table, then
     passthrough), applied here to a job's required_skills/nice_to_have instead
     of a candidate's top_skills. Duplicated rather than imported — score.py
-    may not import enrich.py (ARCHITECTURE.md §7).
+    may not import enrich.py (SPEC.md §8).
     """
     tokens = raw_skills if isinstance(raw_skills, list) else split_list(raw_skills)
     canonical_by_lower = {}

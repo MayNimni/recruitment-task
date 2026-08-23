@@ -1,184 +1,224 @@
-# SPEC.md — implementation contract
+# SPEC — architecture and implementation contract
 
-Companion to `DECISIONS.md`. That document explains *why*; this one fixes *what*, exactly, so the
-implementation is unambiguous. Where the two disagree, `DECISIONS.md` wins and this file is wrong.
+What the system is, how it is partitioned, and exactly what each step must produce. `DECISIONS.md`
+explains **why** and wins wherever the two disagree. `README.md` covers setup and how to run.
 
 ---
 
-## 0. Repository layout
+## 0. System shape
+
+Two flows on two triggers, sharing no process state. The pool on disk is the only interface
+between them.
+
+```mermaid
+flowchart LR
+  T1["Conference closes"] --> A["Flow A — ingestion"]
+  A --> P[("Talent pool on disk")]
+  T2["Role opens"] --> B["Flow B — matching"]
+  P --> B
+  B --> O["Ranked list + recruiter view"]
+```
+
+**Partition rule.** Anything true about a person regardless of any job is Flow A. Anything measured
+against a specific job is Flow B.
+
+| Concern | Flow A | Flow B |
+| :---- | :---- | :---- |
+| Skills | normalize to canonical names | overlap against the requirement set |
+| Field notes | extract tags | compare tags to the role's domains |
+| Referrals | build and grade edges | select which edge to surface |
+
+**Invariants.**
+
+- Flow A never reads a job row. Flow B never reads `conference_attendees.csv` or `linkedin_profiles.csv`.
+- Flow A is idempotent on `hubspot_id`.
+- Flow B is a pure function of the pool, the job row and the config files — no network, no clock, no randomness.
+- Two consecutive runs of either flow produce byte-identical output.
+
+Python 3.10+, pandas only. **On the default path there are no network calls, no API keys and no
+model calls at runtime.** One opt-in exception, `match --llm`, is specified in §8.
+
+---
+
+## 1. Repository layout
 
 ```
 data/
-  conference_attendees.csv      source
-  linkedin_profiles.csv         source
-  wsc_employees.csv             source
-  job_openings.csv              source
-  skill_aliases.json            alias -> canonical skill
-  title_families.json           discipline head-nouns per department
-  company_domains.json          sports / media keyword lists
+  conference_attendees.csv    linkedin_profiles.csv    wsc_employees.csv    job_openings.csv
+  skill_aliases.json          title_families.json      company_domains.json
+  edge_cases/                 the same seven files, synthetic, plus:
+    referral_feedback.csv     optional 8th source — seeds retired edges (§4)
 pool/
-  talent_pool.csv               written by Flow A
-  referral_edges.csv            written by Flow A
+  talent_pool.csv             referral_edges.csv                    written by Flow A
+  edge_cases/                 fixture pool
 output/
-  JOB001_matches.csv            written by Flow B
-  JOB001_recruiter_view.html    written by Flow B
-data/edge_cases/                synthetic fixture: the seven files above plus
-  referral_feedback.csv           optional 8th source, seeds retired edges (A8)
-pool/edge_cases/                fixture pool, written by `--data-dir data/edge_cases`
-output/edge_cases/              fixture output, same
+  JOB00N_matches.csv          JOB00N_recruiter_view.html            written by Flow B
+  edge_cases/                 fixture output
 pipeline/
   ingest.py  enrich.py  score.py  output.py  main.py
-  llm.py                        B7 live seam, imported only under `match --llm`
-  build_aliases.py              offline generator for skill_aliases.json
-recruiter_view.html             HTML template copied by B6
-index_template.html             landing-page template
-index.html                      generated landing page — the reviewer's entry point
-docs/alias_generation_log.md    record of the build_aliases.py run
-requirements.txt  README.md  DECISIONS.md  ARCHITECTURE.md  SPEC.md
+  llm.py                      B7 live seam — imported only under `match --llm`
+  build_aliases.py            offline generator for skill_aliases.json
+recruiter_view.html           per-role template, copied by B8
+index_template.html           landing-page template
+index.html                    generated landing page — the reviewer's entry point
+docs/alias_generation_log.md  record of the build_aliases.py run
+README.md  DECISIONS.md  SPEC.md  requirements.txt
 ```
 
-Python 3.10+, pandas only. **On the default path there are no network calls, no API keys and no
-model calls at runtime** — that property is what the CLI below preserves, and it is what a reviewer
-running this repo gets.
-
-One opt-in exception: `match --llm` calls a model to fill `ai_summary` / `ai_probes` and the
-recruiter view's summary line (§3, B7). It requires `ANTHROPIC_API_KEY` and the `anthropic` package,
-is off by default, produced none of the committed output, and is additive — it cannot change a
-score. `build_aliases.py` is the other model path; it runs offline, by hand, and its result
-(`data/skill_aliases.json`) is committed.
-
-## 1. Command line
-
-```
-python pipeline/main.py ingest                  # Flow A. reads data/, writes pool/
-python pipeline/main.py match --job JOB001      # Flow B. reads pool/ + data/job_openings.csv, writes output/
-python pipeline/main.py run   --job JOB001      # both, in order
-
-python pipeline/main.py match --job JOB001 --llm            # + B7 live seam (needs ANTHROPIC_API_KEY)
-python pipeline/main.py ingest --data-dir data/edge_cases   # any dir holding the same source files
-python pipeline/main.py index                               # rebuild index.html (auto-run after match/run)
-```
-
-`--data-dir` namespaces the pool and output directories by that directory's name
-(`pool/<name>/`, `output/<name>/`), so a fixture run can never overwrite the real one. The default
-`data/` keeps `pool/` and `output/` exactly as above.
-
-`match` fails with a clear message if `pool/` is empty, naming the `ingest` command. The two flows
-never call each other in process — the pool files on disk are the only interface between them.
+Config is data, not code: extending the alias table requires no release.
 
 ---
 
-## 2. Flow A — ingestion
+## 2. Command line
 
-Runs once per person, per conference. No job is involved and no job may be referenced.
+```
+python pipeline/main.py ingest                 # Flow A. reads data/, writes pool/
+python pipeline/main.py match --job JOB001     # Flow B. reads pool/ + job_openings.csv, writes output/
+python pipeline/main.py run   --job JOB001     # both, in order
+python pipeline/main.py index                  # rebuild index.html (auto-run after match/run)
 
-| Step | Module | Function | Result |
+python pipeline/main.py match --job JOB001 --llm            # + B7 live seam (needs ANTHROPIC_API_KEY)
+python pipeline/main.py ingest --data-dir data/edge_cases   # any dir holding the same source files
+```
+
+`--data-dir` namespaces the pool and output directories by that directory's name
+(`pool/<name>/`, `output/<name>/`), so a fixture run can never overwrite the real one.
+
+| Failure | Behaviour |
+| :---- | :---- |
+| `pool/` empty or missing | non-zero exit naming the `ingest` command |
+| unknown `--job` | non-zero exit listing the valid ids |
+| unknown `seniority` in a job row | raises, naming the job id |
+
+---
+
+## 3. Stores
+
+| Path | Kind | Written by | Read by |
 | :---- | :---- | :---- | :---- |
-| A1 | `ingest.py` | `load_sources(data_dir)` | four dataframes plus three config dicts |
-| A2 | `enrich.py` | `join_profiles(attendees, profiles)` | one row per attendee, `unverified` flag |
-| A3 | `enrich.py` | `normalize_skills(raw_skills, aliases)` | canonical skill list |
-| A4 | `enrich.py` | `extract_note_tags(note)` | tag list, `flagged_on_site` flag |
-| A5 | `enrich.py` | `resolve_mutual_connections(row, employees)` | one edge per listed employee, `mutual_count` |
-| A6 | `enrich.py` | `find_shared_employers(row, employees, ...)` | additional edges, `shared_employer` |
-| A7 | `enrich.py` | `assign_tier(edge)` | `A` / `B` / `C` / `D` |
-| A8 | `enrich.py` | `write_pool(pool_df, edges_df, pool_dir)` | two CSVs |
+| `data/conference_attendees.csv` | source | — | A1 |
+| `data/linkedin_profiles.csv` | source | — | A1 |
+| `data/wsc_employees.csv` | source | — | A1 |
+| `data/job_openings.csv` | source | — | B1 |
+| `data/skill_aliases.json` | config | `build_aliases.py`, offline | A3, B1 |
+| `data/title_families.json` | config | — | B3 |
+| `data/company_domains.json` | config | — | B3 |
+| `<data-dir>/referral_feedback.csv` | source, **optional** | recruiter (production: HubSpot). Absent under `data/`; present under `data/edge_cases/` | A7 |
+| `pool/talent_pool.csv` | state | A8 | B2 |
+| `pool/referral_edges.csv` | state | A8 | B2 |
+| `output/JOB00N_matches.csv` | artifact | B8 | index |
+| `output/JOB00N_recruiter_view.html` | artifact | B8 | — |
+| `index.html` | artifact | `main.py index` | — |
+
+---
+
+## 4. Flow A — ingestion
+
+Runs once per person, per conference. No job is involved and none may be referenced.
+
+```mermaid
+flowchart LR
+  S1["A1 Load sources"] --> S2["A2 Join to profile"]
+  S2 --> S3["A3 Normalize skills"]
+  S3 --> S4["A4 Extract note tags"]
+  S4 --> S5["A5 Mutual connections"]
+  S5 --> S6["A6 Shared employers"]
+  S6 --> S7["A7 Assign tier"]
+  S7 --> S8["A8 Write pool"]
+  S8 --> P1[("talent_pool.csv")]
+  S8 --> P2[("referral_edges.csv")]
+```
+
+| Step | Module · function | Input | Output |
+| :---- | :---- | :---- | :---- |
+| A1 | `ingest.load_sources` | four CSVs, three JSON, optional feedback CSV | dataframes + config dicts |
+| A2 | `enrich.join_profiles` | attendees, profiles | one row per attendee, `unverified` flag |
+| A3 | `enrich.normalize_skills` | `top_skills`, aliases | `skills_canonical`, `skills_alias_hits` |
+| A4 | `enrich.extract_note_tags` | `notes` | `note_tags`, `flagged_on_site` |
+| A5 | `enrich.resolve_mutual_connections` | `wsc_mutual_connections`, roster | one edge per listed employee, `mutual_count` |
+| A6 | `enrich.find_shared_employers` | `past_companies`, `past_titles`, `work_history` | more edges, `shared_employer`, `overlap_*` |
+| A7 | `enrich.assign_tier` | edge attributes | `tier` ∈ {A, B, C, D}, `referral_feedback` |
+| A8 | `enrich.write_pool` | rows, edges | two CSVs |
 
 ### A2 — join
 
-Key is `linkedin_url`, exact string match after stripping whitespace and a leading `https://` or
-`www.`. No name-based fallback — see `DECISIONS.md` §2.2.
+Key is `linkedin_url`, exact match after stripping whitespace, a leading `https://` and `www.`. **No
+name-based fallback** — common names produce false matches, and misidentifying a candidate is worse
+than not identifying one (`DECISIONS.md` §2.2).
 
-A row with no match is **kept**, `unverified = True`, profile-derived fields empty. In the supplied
-data all 75 rows match, so this branch is code and documentation, not a demonstrated path. Say so in
-the README rather than implying it was exercised.
+An unmatched row is **kept** with `unverified = True` and profile-derived fields empty. In the
+supplied data all 75 rows match, so this branch is code and documentation, not a demonstrated path;
+`data/edge_cases/` exercises it.
 
 ### A3 — skill normalization
 
-`skill_aliases.json` maps lowercased alias to canonical name:
+`skill_aliases.json` maps lowercased alias → canonical name. Resolution order: exact
+case-insensitive match on the canonical set, then the alias table, then `resolve_unknown_alias`,
+which returns the token unchanged and carries the §8 seam docstring.
 
-```json
-{ "yolo": "Object Detection", "opencv": "Computer Vision", "ml": "Deep Learning",
-  "ai": "Deep Learning", "machine learning": "Deep Learning", "torch": "PyTorch" }
-```
-
-Resolution order: exact case-insensitive match on the canonical set, then the alias table, then
-`resolve_unknown_alias(token)`.
-
-`resolve_unknown_alias` returns the token unchanged and carries this docstring, which is the visible
-seam described in `DECISIONS.md` §3.3:
-
-> Deterministic fallback. In production this function calls a language model to map an unseen skill
-> name onto the canonical set, caches the result back into `skill_aliases.json`, and the model is
-> never called twice for the same token. It is deterministic here so the pipeline runs with no API
-> key and returns identical output on every run.
-
-Keep both forms on the record: `skills_raw` and `skills_canonical`, plus `skills_alias_hits`, the
-list of `raw -> canonical` pairs that the alias table resolved. The third one is what the recruiter
-view shows as a blue chip.
+Keep both forms: `skills_raw` and `skills_canonical`, plus `skills_alias_hits` — the `raw ->
+canonical` pairs the alias table resolved. The third is what the recruiter view shows as a blue chip.
 
 ### A4 — field notes
 
-`extract_note_tags` lowercases the note, strips punctuation and stopwords, and returns the remaining
-tokens plus their canonical forms via the alias table. `flagged_on_site = bool(note.strip())`.
-
-Same seam pattern: a docstring stating that production replaces token extraction with a model that
-returns structured signal tags, per `DECISIONS.md` §3.3.
-
-Note **value** is not computed here. It depends on the job and belongs to Flow B.
+Lowercase the note, strip punctuation and stopwords, return the remaining tokens plus their
+canonical forms. `flagged_on_site = bool(note.strip())`. Note **value** depends on the job and
+belongs to B3.
 
 ### A5 — mutual connections
 
-`wsc_mutual_connections` is a `;`-separated list of employee ids, possibly empty. For each id, emit
-one edge carrying the employee's name, title and department from the roster. `mutual_count` is the
-length of the list and is identical on every edge of that candidate.
+`wsc_mutual_connections` is a `;`-separated list of employee ids, possibly empty. Emit one edge per
+id carrying that employee's name, title and department. `mutual_count` is the length of the list,
+written identically onto every edge of that candidate.
 
-### A6 — shared employers
+### A6 — shared employers and tenure overlap
 
-Compare the candidate's `past_companies` against each employee's `work_history`, which carries
-`Company (YYYY-YYYY);…`. Strip the date parenthesis, lowercase, split into tokens.
+Compare `past_companies` against each employee's `work_history` (`Company (YYYY-YYYY);…`). Strip the
+date parenthesis, lowercase, tokenize.
 
-Stem every token longer than four characters by stripping a single trailing `s` before doing
-anything else with it, and stem the drop-list itself the same way. This is a plural strip, not a
-lemmatizer — `technologies` becomes `technologie`, not `technology` — and it must be applied
-identically to both sides of the comparison, or `sports` on the drop-list and `sport` on a company
-name silently stop being the same token.
+Stem every token longer than four characters by removing a single trailing `s`, and stem the
+drop-list identically — otherwise `sports` on the drop-list and `sport` on a company name stop being
+the same token. Drop these generic tokens post-stemming:
 
-Drop these generic tokens (post-stemming): `technologies, software, group, sports, lab, labs,
-research, unit, freelance, startup, inc, ltd, media, digital, online, global, network, solution,
-service, system, international, company, holding, studio, partner, venture, consulting, agency,
-technology`.
-
-Where a match is found, derive the overlap window: the candidate's tenure at that company comes from
-`past_titles` (`Title at Company (YYYY-YYYY)`, the one candidate field that does carry dates), the
-employee's from `work_history`. `overlap_years` is the length of the intersection in whole years and
-`overlap_period` is its `YYYY-YYYY` string; both are `0` / empty when the ranges are disjoint or
-either side is missing or unparseable. This is what lets B5 distinguish a proven shared tenure from a
-merely shared employer.
+> `technologies, software, group, sports, lab, labs, research, unit, freelance, startup, inc, ltd,
+> media, digital, online, global, network, solution, service, system, international, company,
+> holding, studio, partner, venture, consulting, agency, technology`
 
 A match requires a **shared non-generic token of four characters or more**. Substring matching is
-forbidden: it pairs a candidate from `Intel` with an employee from `IDF Intelligence Unit`. That
-example is named in `DECISIONS.md` §2.3 and must be a test case.
+forbidden: it pairs a candidate from `Intel` with an employee from `IDF Intelligence Unit`.
 
-An edge may be created here for a candidate with zero mutual connections. That is the point of the
-step — the pool contains such pairs.
+On a match, derive the overlap window. The candidate's tenure comes from `past_titles`
+(`Title at Company (YYYY-YYYY)` — the one candidate field carrying dates, open-ended as `-present`);
+the employee's from `work_history`. `overlap_years` is the intersection in whole years and
+`overlap_period` its `YYYY-YYYY` string; both are `0` / empty when the ranges are disjoint or either
+side is missing or unparseable.
+
+This step may create an edge for a candidate with zero mutual connections. That is the point of it.
 
 ### A7 — tier
 
-| Tier | Condition |
-| :---- | :---- |
-| `A` | shared employer present, `mutual_count >= 1` |
-| `B` | no shared employer, `mutual_count >= 3` |
-| `C` | shared employer present, `mutual_count == 0` |
-| `D` | no shared employer, `mutual_count` is 1 or 2 |
+Three signals: a shared employer, whether the two tenures **actually overlap**, and whether *this*
+employee is one of the candidate's listed mutual connections (`mutual_count ≥ 1` on this edge).
 
-A shared employer corroborates a connection rather than substituting for one — it only reaches tier
-`A` alongside at least one mutual connection; on its own it is tier `C` (`DECISIONS.md` §2.3). Tier
-`D` is a stored value like the others: an edge that exists always carries one of these four tiers.
-Only a candidate with no edge at all — no shared employer and no mutual connections — has no row.
+| Tier | Condition | Reading |
+| :---- | :---- | :---- |
+| **A** | shared employer **and** overlap **and** a mutual connection | ask first — they were there together, and know someone in common |
+| **B** | no shared employer, `mutual_count ≥ 3` | familiarity is plausible |
+| **C** | `mutual_count` ∈ {1, 2}; **or** shared employer, no overlap, with a mutual connection; **or** shared employer with overlap, no mutual connection | worth a careful ask |
+| **D** | shared employer, no overlap, no mutual connection | weakest signal that still earns a row |
 
-### A8 — `pool/talent_pool.csv`
+Overlap is only ever nonzero when `shared_employer` is set, so "overlap without a shared employer" is
+not a case. Every edge carries exactly one tier; an edge matching none raises rather than returning
+an empty tier. Only a candidate with **no edge at all** has no row.
 
-One row per attendee, keyed on `hubspot_id`:
+`referral_feedback` is not derived from any source record — in production a recruiter writes it back
+through HubSpot after asking the colleague. A7 reads it from `referral_feedback.csv`
+(`hubspot_id, employee_id, referral_feedback`) when that file is present, and writes `not_requested`
+for every edge when it is absent, as it is under `data/`.
+
+### A8 — output columns
+
+**`pool/talent_pool.csv`** — one row per attendee, keyed on `hubspot_id`:
 
 `hubspot_id, full_name, email, company, title, linkedin_url, current_company, current_title,
 location, years_experience, industry, past_companies, past_titles, skills_raw, skills_canonical,
@@ -186,203 +226,361 @@ skills_alias_hits, note_raw, note_tags, flagged_on_site, unverified, conference_
 conference_domain, conference_date, source, first_seen_at, last_refreshed_at, ats_status,
 pool_status`
 
-List-valued columns are `;`-separated. `ats_status` is written empty — the field exists, the data
-does not, and `DECISIONS.md` §2.4 already says so. `referral_feedback` is not a pool column: it is an
-attribute of the candidate-employee pair, not of the candidate, so it lives only on
-`pool/referral_edges.csv` — see `DECISIONS.md` §2.3 and the data model in `ARCHITECTURE.md` §6.
-
-### A8 — `pool/referral_edges.csv`
-
-One row per candidate-employee pair, keyed on `hubspot_id` + `employee_id`:
+**`pool/referral_edges.csv`** — one row per candidate-employee pair, keyed on `hubspot_id` +
+`employee_id`:
 
 `hubspot_id, employee_id, employee_name, employee_title, employee_department, mutual_count,
 shared_employer, overlap_years, overlap_period, tier, referral_feedback`
 
-`shared_employer` holds the matched company name or is empty. `overlap_years` / `overlap_period`
-carry the A6 window and are `0` / empty when there is none.
-
-Write "worked together" **only** when `overlap_years > 0`. `past_companies` alone carries no dates,
-so a shared employer on its own proves only that both were there at some point — B5 phrases that
-case as "both worked at X, no overlapping years".
-
-`referral_feedback` is not derived from any source record: in production a recruiter writes it back
-through HubSpot after asking the colleague. Ingestion reads it from `referral_feedback.csv`
-(`hubspot_id, employee_id, referral_feedback`) when that file is present in the data directory, and
-writes `not_requested` for every edge when it is absent — as it is under `data/`.
+List-valued columns are `;`-separated. `ats_status` is written empty — the field exists, the data
+does not. `referral_feedback` is an attribute of the **pair**, so it lives only on the edge file.
 
 ---
 
-## 3. Flow B — matching
+## 5. Flow B — matching
 
-Runs per open role. Arithmetic only: no file in `data/` is re-derived, no external call is made.
+Runs per open role. Arithmetic only: nothing in `data/` is re-derived and no external call is made.
 
-| Step | Module | Function |
+```mermaid
+flowchart LR
+  P[("Talent pool")] --> R2
+  R1["B1 Parse job"] --> R2["B2 Load pool"]
+  R2 --> R3["B3 Score 7 components"]
+  R3 --> R4["B4 Weight and rank"]
+  R4 --> R5["B5 Select referral"]
+  R5 --> R6["B6 Build rationale"]
+  R6 --> R7["B7 Optional model brief"]
+  R7 --> R8["B8 Write outputs"]
+  R8 --> O1[("JOB00N_matches.csv")]
+  R8 --> O2[("JOB00N_recruiter_view.html")]
+```
+
+| Step | Module · function | Produces |
 | :---- | :---- | :---- |
-| B1 | `score.py` | `parse_job(job_row, aliases)` |
-| B2 | `main.py` | `read_pool(pool_dir)` |
-| B3 | `score.py` | seven component functions, each returning a float in `[0, 1]` |
-| B4 | `score.py` | `rank(scored_rows, weights)` |
-| B5 | `output.py` | `select_referral(edges, job_department)` |
-| B6 | `output.py` | `write_matches_csv(...)`, `write_recruiter_view(...)` |
+| B1 | `score.parse_job` | requirement set + domain vocabulary |
+| B2 | `main.read_pool` | pool rows, edge rows |
+| B3 | `score.score_components` | seven floats in `[0,1]`, `score_basis` |
+| B4 | `score.rank` | `match_score`, `points_*`, rank order |
+| B5 | `output.select_referral` | one edge or none |
+| B6 | `output.build_rationale`, `build_interview_probes` | plain-language explanation |
+| B7 | `output.apply_llm_*` | `ai_summary` / `ai_probes` — **opt-in only**, §8 |
+| B8 | `output.write_matches_csv`, `write_recruiter_view` | two artifacts |
 
 ### B1 — requirement set
 
-From the job row: `required_skills` and `nice_to_have` split on `;` and normalized through the alias
-table; `key_domains` split on `;` then tokenized; `seniority` mapped to a years threshold.
+`required_skills` and `nice_to_have` split on `;` and normalized through the alias table;
+`key_domains` split on `;` then tokenized; `seniority` mapped to a years threshold.
 
-`domain_vocabulary` = key-domain tokens, plus their alias expansions, minus stopwords. Both the title
+`domain_vocabulary` = key-domain tokens plus their alias expansions, minus stopwords. Both the title
 component and the conference component read this one vocabulary.
 
 ### B3 — the seven components
 
-Every component returns a value in `[0, 1]`. Weight is applied once, in `rank`. A component never
-returns points.
+Every component returns a value in `[0, 1]`. **Weight is applied once, in B4. A component never
+returns points.**
 
-**Skills, weight 30.** `matched / len(required_skills)`, where a required skill counts as matched if
-it appears in `skills_canonical`. Emit three lists for the output: `skills_matched` (exact on the raw
-list), `skills_semantic` (matched only after alias resolution, as `raw -> canonical`), and
-`skills_missing`.
+| Component | Weight | Value |
+| :---- | ----: | :---- |
+| **Skills** | 30 | `matched ÷ len(required_skills)`, matched on `skills_canonical` |
+| **Title** | 25 | `min(1.0, core + seniority_bonus)` — see below |
+| **Experience** | 15 | `1.0` at or above the threshold, else `years ÷ threshold` |
+| **Industry** | 13 | `1.0` if `industry` contains `sport`; `0.5` for video/broadcast/streaming/media/ott; else `0` |
+| **Field notes** | 10 | `1.0` if `note_tags` ∩ `domain_vocabulary`; `0.5` if a note exists with no overlap; `0` if no note |
+| **Past companies** | 5 | best over `past_companies` via `company_domains.json`: `1.0` sports, `0.5` media/video, else `0` |
+| **Conference domain** | 2 | `1.0` if `conference_domain` tokens ∩ `domain_vocabulary`, else `0` |
 
-**Title, weight 25.** `min(1.0, core + seniority_bonus)`.
+Seniority thresholds: `Junior` 2, `Mid` 3, `Mid-Senior` 5, `Senior` 6.
 
-Clean the title first: take the part before ` - `, lowercase, remove the tokens `senior, sr, staff,
-principal, lead, head, of, junior, jr`.
+**Title sub-rule.** Clean first: take the part before ` - `, lowercase, remove
+`senior, sr, staff, principal, lead, head, of, junior, jr`.
 
 | Core | Condition |
-| :---- | :---- |
+| ----: | :---- |
 | `0.7` | the cleaned title **ends with** an entry from the job department's list in `title_families.json` |
-| `0.25` | it does not, but the title contains a token from `domain_vocabulary` |
+| `0.25` | it does not, but the title contains a `domain_vocabulary` token |
 | `0` | neither |
 
 | Bonus | Original title contains |
-| :---- | :---- |
+| ----: | :---- |
 | `+0.3` | `senior`, `sr`, `staff` |
 | `+0.15` | `principal`, `lead`, `head` |
-| `0` | none of these |
 
-`title_families.json` is keyed by the job's `department`. For `AI/ML`: `ml engineer, machine learning
-engineer, ml research engineer, research engineer, ai engineer, computer vision engineer, cv
-engineer, deep learning engineer, data scientist`. Populate `Engineering`, `Data` and `Product`
-likewise so JOB002–JOB004 run.
+`endswith` is deliberate: it reads the head noun and ignores qualifiers, so `senior computer vision
+engineer` and `sports data scientist` both land on their family.
 
-Matching by `endswith` is deliberate: it reads the head noun of the title and ignores qualifiers, so
-`senior computer vision engineer` and `sports data scientist` both land on their family.
-
-**Experience, weight 15.** `1.0` at or above the threshold, otherwise `years / threshold`.
-Thresholds: `Junior` 2, `Mid` 3, `Mid-Senior` 5, `Senior` 6.
-
-**Industry, weight 13.** `1.0` if the profile's `industry` contains `sport`; `0.5` if it contains
-`video`, `broadcast`, `streaming`, `media` or `ott`; `0` otherwise. Lowercased substring match on a
-single short field is safe here — unlike company names, this field has no adversarial cases.
-
-**Field notes, weight 10.** `1.0` if `note_tags` intersects `domain_vocabulary`; `0.5` if a note
-exists with no intersection; `0` if no note.
-
-**Past companies, weight 5.** Same two keyword lists as the industry component, read from
-`company_domains.json`, applied to each entry in `past_companies`, taking the best: `1.0` sports,
-`0.5` media or video, `0` otherwise.
-
-**Conference domain, weight 2.** `1.0` if `conference_domain` tokens intersect `domain_vocabulary`,
-else `0`.
+**Skills emits three lists** for the output: `skills_matched` (exact on the raw list),
+`skills_semantic` (matched only after alias resolution, as `raw -> canonical`), and `skills_missing`.
 
 ### B3 — unverified candidates
 
-If `unverified` is true, only `title`, `notes` and `conference` are computable. Sum only those
-weights, divide by that sum rather than by 100, and set `score_basis` to the list of components used.
-Missing data must not read as poor fit — `DECISIONS.md` §2.2.
+With no profile, exactly **three** components are computable: `title`, `notes`, `conference`
+(industry, skills, experience and past companies all come from the profile). Sum only those weights
+and divide by that sum — `25 + 10 + 2 = 37` — rather than by 100, and set `score_basis` to the list
+used. **Missing data must not read as poor fit** (`DECISIONS.md` §2.2). Presentation rules in §7.
 
 ### B4 — weights and ranking
 
-Defaults: `skills 30, title 25, experience 15, industry 13, notes 10, past 5, conference 2`. They
-live in one dictionary in `score.py` and are written into the CSV and the HTML from that same
-dictionary. The CSV always carries default weights; see `DECISIONS.md` §3.3.
+Defaults live in one dictionary in `score.py` and are written into both the CSV and the HTML from
+that same dictionary:
 
-`match_score = round_half_up(sum(value * weight) / sum(weights) * 100)`, where `round_half_up(x) =
-math.floor(x + 0.5)` rather than Python's built-in `round()`, which rounds half to even. This exists
-to match `Math.round` in the recruiter view template, which rounds half up — otherwise a raw score
-ending in exactly `.5` (e.g. `86.5`) would round to a different whole number in the CSV than on
-screen. Sort descending, ties broken by `years_experience` then `hubspot_id` so runs are
-reproducible.
+`skills 30, title 25, experience 15, industry 13, notes 10, past 5, conference 2` — sum 100.
 
-At default weights, the recruiter view's initial render displays this same `match_score` value
-directly rather than recomputing it in the browser, so the CSV and the screen cannot disagree at
-the one point where they're compared. Recomputation still drives every render after a weight
-slider moves, where a different number is expected.
+`match_score = round_half_up(Σ(value × weight) ÷ Σ(weight) × 100)`, where
+`round_half_up(x) = floor(x + 0.5)` rather than Python's `round()`, which rounds half to even. This
+matches `Math.round` in the recruiter view, so a raw score of exactly `86.5` cannot round one way in
+the CSV and the other on screen. Sort descending; ties break on `years_experience`, then
+`hubspot_id`, so runs are reproducible.
 
 ### B5 — referral selection
 
 Among that candidate's edges: highest tier first, then smallest department distance to the job's
-department, then highest `mutual_count`. Department distance is a small explicit map — same
-department is 0, a named adjacent pair is 1, anything else is 2. Retire any edge whose
-`referral_feedback` is `insufficient` before choosing.
+department, then highest `mutual_count`. Department distance is an explicit map — same department 0,
+a named adjacent pair 1, anything else 2. Any edge whose `referral_feedback` is `insufficient` is
+**retired before choosing**.
 
-Carry `referral_why` as plain text. With a shared employer (tiers A and C):
-`worked together at Mobileye, 2019-2021` when `overlap_years > 0`, otherwise
-`both worked at Mobileye, no overlapping years`. With none: `3 mutual connections`
-(singular at 1).
+`referral_why` as plain text:
 
-### B6 — `output/JOB001_matches.csv`
+| Condition | String |
+| :---- | :---- |
+| shared employer, `overlap_years > 0` | `worked together at Mobileye, 2019-2021` |
+| shared employer, no overlap | `both worked at Mobileye, no overlapping years` |
+| no shared employer | `3 mutual connections` (singular at 1) |
+
+"Worked together" is written **only** when the dates back it up. A shared employer alone proves only
+that both were there at some point.
+
+### B8 — output columns
+
+**`output/JOB00N_matches.csv`:**
 
 `job_id, hubspot_id, full_name, current_title, current_company, years_experience, location,
 linkedin_url, match_score, match_score_after_feedback, score_basis, value_skills, value_title,
 value_experience, value_industry, value_notes, value_past, value_conference, points_skills,
 points_title, points_experience, points_industry, points_notes, points_past, points_conference,
 skills_matched, skills_semantic, skills_missing, rationale, interview_probes, ai_summary, ai_probes,
-referral_name,
-referral_title, referral_department, referral_tier, referral_why, referral_feedback,
+referral_name, referral_title, referral_department, referral_tier, referral_why, referral_feedback,
 flagged_on_site, unverified, ats_status, conference_name, conference_date`
 
-`ai_summary` and `ai_probes` sit immediately after `interview_probes`. They are written only by
-`match --llm` and are empty on every default run — including every committed output file. They are
-additive: the templated `rationale` / `interview_probes` beside them are always written first and are
-never overwritten, and a failed model call leaves the pair empty rather than failing the run.
-
 `match_score_after_feedback` equals `match_score` while no feedback exists. It is a separate column
-because the adjustment sits on top of the fit score, never inside it — `DECISIONS.md` §2.3.
-
-`rationale` and `interview_probes` are built by template, from the component values and the skill
-lists. Both functions carry the same seam docstring as `resolve_unknown_alias`, naming the model
-that replaces the template in production.
-
-### B6 — `output/JOB001_recruiter_view.html`
-
-One self-contained file, opened by double click, no server, data embedded as a JSON literal.
-
-**Use `recruiter_view.html` (repo root) as the template.** It is the approved recruiter view — not
-`index_template.html`, which is the landing page listing every role, nor the generated `index.html`. Copy it, then replace only the `DATA`
-array, the header title and subtitle, and the `DEF` weights object. Do not redesign the markup, the
-CSS or the interaction — they are approved. The sliders re-rank in browser memory only, never write
-to disk, and the reset button restores `DEF`. The template file itself is never modified; the copy is
-written to `output/JOB001_recruiter_view.html`.
-
-**Unverified rows are labelled, not silently scored.** A row with `unverified = True` carries `u`
-and `b` (its `score_basis`) in the `DATA` literal; a verified row carries neither and its payload is
-unchanged. Given those, the view must:
-
-- normalize the live weight-slider recompute over the components in `b` only, matching
-  `score.score_components` — otherwise moving a slider would drop the candidate from its stated
-  score to a full-100 denominator;
-- list only those components in the expandable breakdown, name the rest `not scored`, and label the
-  total `out of <sum of b's weights>, not 100`;
-- suppress the red `<skill> missing` chips. With no profile there is no skill list to compare
-  against, so a required skill is unassessed, not absent, and a red gap chip asserts otherwise;
-- omit an absent `years_experience` or `location` from the meta line rather than rendering the gap;
-- carry a plain-English badge saying no LinkedIn profile matched and what the score is based on.
-
-`build_rationale` and `build_interview_probes` take the same branch: no `N/M required skills
-matched` sentence and no `Probe depth on:` list, because both would report a comparison that never
-happened. See `DECISIONS.md` §2.2 — missing data must not read as poor fit, on screen or in the CSV.
+because the adjustment sits **on top of** the fit score, never inside it. `ai_summary` / `ai_probes`
+are empty on every default run, including every committed file.
 
 Both output files are written in the same call from the same in-memory rows, so the screen cannot
 contradict the table.
 
 ---
 
-## 4. What must be true when it is done
+## 6. Data model
 
-- `python main.py run --job JOB001` produces four files from a clean checkout with no configuration.
+```mermaid
+erDiagram
+  TALENT_POOL ||--o{ REFERRAL_EDGES : has
+  EMPLOYEES   ||--o{ REFERRAL_EDGES : vouches
+  TALENT_POOL ||--o{ MATCH_RESULTS : scored_in
+  JOBS        ||--o{ MATCH_RESULTS : ranks
+  TALENT_POOL {
+    string hubspot_id PK
+    string skills_canonical
+    string past_titles
+    string note_tags
+    float years_experience
+    bool unverified
+  }
+  REFERRAL_EDGES {
+    string hubspot_id FK
+    string employee_id FK
+    int mutual_count
+    string shared_employer
+    int overlap_years
+    string tier
+    string referral_feedback
+  }
+  EMPLOYEES {
+    string employee_id PK
+    string department
+    string work_history
+  }
+  JOBS {
+    string job_id PK
+    string key_domains
+    string required_skills
+    string seniority
+  }
+  MATCH_RESULTS {
+    string job_id FK
+    string hubspot_id FK
+    int match_score
+    string score_basis
+    string referral_name
+  }
+```
+
+`REFERRAL_EDGES` is a separate relation because the cardinality is many-to-many and because
+`mutual_count`, `shared_employer`, `overlap_*`, `tier` and `referral_feedback` are attributes of the
+**pair**, not of the candidate. Storing feedback on the edge is what lets it adjust a score without
+mutating it — `match_score` and `match_score_after_feedback` stay separate columns.
+
+`ats_status` is emitted and unpopulated in this submission.
+
+---
+
+## 7. Presentation contract — the recruiter view
+
+One self-contained file per role, opened by double click, data embedded as a JSON literal. Copy
+`recruiter_view.html`, replace only the `DATA` array, the `DEF` weights, the `SUMMARY` line and the
+header text. The markup, CSS and interaction are approved and are never redesigned by the generator.
+
+Sliders re-rank in browser memory only, never write to disk, and a reset button restores `DEF`. At
+default weights the initial render displays the CSV's `match_score` directly rather than recomputing
+it, so the two cannot disagree at the one point where they'd be compared.
+
+**Unverified rows are labelled, not silently scored.** Such a row carries `u` and its `score_basis`
+in `DATA`; a verified row carries neither and its payload is unchanged. The view must:
+
+- normalize the live slider recompute over the basis components **only**, matching `score_components`;
+- list only those components in the breakdown, mark the rest `not scored`, and label the total `out of 37, not 100`;
+- **suppress the red `<skill> missing` chips** — with no profile a required skill is unassessed, not absent;
+- omit an absent `years_experience` or `location` rather than rendering the gap;
+- carry a badge stating that no LinkedIn profile matched and what the score is based on.
+
+`build_rationale` and `build_interview_probes` take the same branch: no `N/M required skills matched`
+sentence and no `Probe depth on:` list, because both report a comparison that never happened.
+
+**`index.html`** is the landing page: every role with its headline numbers, opening that role's view
+on click, plus a jump-by-id box. Generated from `index_template.html` by `output.write_index`, which
+is the one writer that *reads* from `output/` — the landing page spans every role while `match` runs
+one at a time. It is skipped on a `--data-dir` run so a fixture can never rewrite it.
+
+---
+
+## 8. Modules and the model boundary
+
+| Module | Flow | Steps | Owns |
+| :---- | :---- | :---- | :---- |
+| `ingest.py` | A | 1 | file reads only |
+| `enrich.py` | A | 2–8 | join, normalization, tags, edges, tiers, pool write |
+| `score.py` | B | 1, 3, 4 | requirement parsing, components, normalization, ranking |
+| `output.py` | B | 5–8 | referral selection, rationale, CSV writer, HTML writers |
+| `main.py` | both | B2 | argument parsing, sequencing, and the pool read — no scoring logic |
+| `llm.py` | B | 7 | the B7 seam's live implementation — opt-in |
+| `build_aliases.py` | — | — | offline alias generator, not imported by `main.py` |
+
+**Default path dependency direction is one-way:** `main` → `{ingest, enrich, score, output}`.
+`ingest`, `enrich` and `score` import no peer and no network library at all; `output` imports no peer
+at module level. A default `ingest` / `match` / `run` loads nothing that can open a socket.
+
+### The four free-text touchpoints
+
+Everything else in the system is a structured-field comparison, implemented as arithmetic.
+
+| Touchpoint | Step | Submitted | Seam |
+| :---- | :---- | :---- | :---- |
+| Unknown skill alias | A3 | dictionary lookup, passthrough on miss | `resolve_unknown_alias` |
+| Field note | A4 | token extraction against a vocabulary | `extract_note_tags` |
+| Job description | B1 | parsed from CSV columns | `parse_job` |
+| Rationale / probes | B7 | template over component values | `build_rationale`, `build_interview_probes` |
+
+A3, A4 and B1 are deterministic in **every** run and each carries a docstring naming its production
+replacement. **B7 is the one seam wired live**, behind `match --llm`.
+
+### The two opt-in model paths
+
+Both imports are function-local, so the default path never executes them:
+
+| Import | Site | Reached when |
+| :---- | :---- | :---- |
+| `output.py` → `llm` | inside `apply_llm_briefs`, `apply_llm_job_summary` | `match --llm` |
+| `llm.py` → `anthropic` | inside `build_client` | `match --llm` |
+| `build_aliases.py` → `anthropic` | inside `call_model` | running that script by hand |
+
+With `--llm` set, a job costs at most **21 calls**: one per candidate for the top 20 ranked rows
+(`shortlist_size = 20`) writing `ai_summary` / `ai_probes`, and one writing the shortlist summary
+line. Both are **additive** — `build_match_row` has already written the deterministic `rationale` /
+`interview_probes`, and the model path never overwrites them. `call_candidate_brief` and
+`call_shortlist_summary` return `None` on a malformed response or an API error, and the caller treats
+`None` as an ordinary outcome: the field stays empty and the run finishes.
+
+The shortlist summary line is the one field with no deterministic counterpart — model-or-nothing, so
+a keyless run renders no line rather than a templated one.
+
+**Scoring is never a model call, with or without the flag.** Nothing in `score.py` can reach
+`llm.py` by any path.
+
+---
+
+## 9. Production topology
+
+```mermaid
+flowchart LR
+  M["HubSpot"] --> A["Flow A"]
+  E["Enrichment provider"] --> A
+  A --> P[("Talent pool")]
+  P --> B["Flow B"]
+  J["Comeet — open roles"] --> B
+  B --> V["Recruiter view"]
+  V -->|"explicit recruiter action"| C["Comeet — create candidate"]
+  V -->|"referral request"| S["Slack"]
+```
+
+**The supplied CSVs represent the output of a capture layer that runs before A1:** registration
+writes a lead to HubSpot → badge scan reconciles attendance → staff add a structured annotation →
+a licensed provider enriches on profile URL → canonical skill resolution → contact-property write.
+
+Enrichment constraints the design absorbs: rate limited, so batched and queued rather than
+synchronous; partial coverage, so unmatched contacts are flagged rather than dropped; per-lookup
+cost, so enrichment runs **once per person in Flow A** and never per query in Flow B.
+
+| Step | Submitted | Production |
+| :---- | :---- | :---- |
+| A1 | read CSVs | HubSpot contacts API by event; enrichment provider batch job |
+| A2 | exact join on `linkedin_url` | provider records on the same key; unmatched go to a review queue, still `unverified` |
+| A3 | dictionary lookup | dictionary + model resolution for misses, cached back |
+| A4 | token extraction | model returning structured tags, or structured capture upstream |
+| A5 | parse delimited id list | connection data from the provider; roster from the HR system |
+| A6–A8 | roster comparison, write CSVs | unchanged; write HubSpot contact properties |
+| B1 | read three CSV columns | Comeet role by id, parsed from prose by a model |
+| B2 | read two CSVs | query contact properties for the pool segment |
+| **B3–B6** | **arithmetic** | **unchanged** |
+| B8 | write CSV + HTML | same, plus in-app view, Comeet creation on explicit action, Slack referral request |
+
+**B3 through B6 are byte-for-byte identical between submission and production.** The scoring path has
+no integration dependency, which is what makes the ranking defensible.
+
+Two external writes exist. The pool write is idempotent on `hubspot_id`. The ATS write is gated on an
+explicit recruiter action. **Nothing advances a person into a hiring process automatically.**
+
+**Scale envelope.** ~30 events/year × 30–100 attendees = 900–3,000 records/year; 5,000–9,000 rows at
+three years; five recruiters, tens of concurrent roles. Flow A decomposes into one scheduled worker
+per step with retries and queues, without restructuring. Flow B remains a single-pass scan.
+
+---
+
+## 10. Failure modes
+
+| Condition | Behaviour | Step | In supplied data |
+| :---- | :---- | :---- | :---- |
+| no profile match | row kept, `unverified` set, score normalized over 37 | A2, B3 | no — fixture |
+| `wsc_mutual_connections` empty | no edges from A5; A6 may still produce one | A5 | yes |
+| no edges at all | referral fields empty, row kept and ranked | B5 | yes |
+| skill absent from the alias table | passthrough, counted as missing | A3 | no — fixture |
+| note absent | notes component returns 0 | B3 | yes |
+| `past_titles` date missing or unparseable | treated as no overlap, never guessed | A6 | yes (1 case) |
+| open-ended `(YYYY-present)` tenure | parsed as running to the present | A6 | yes |
+| edge marked `insufficient` | retired before selection, score unchanged | B5 | no — fixture |
+| title in no `title_family` | title core falls to `0.25` or `0` | B3 | no — fixture |
+| `pool/` empty or missing | non-zero exit naming `ingest` | B2 | CLI |
+| unknown `job_id` | non-zero exit listing valid ids | B1 | CLI |
+
+`data/edge_cases/` is a 13-row synthetic fixture built to exercise every row marked "fixture" above.
+Run it with `python pipeline/main.py run --job JOB001 --data-dir data/edge_cases`; output committed
+at `output/edge_cases/`.
+
+---
+
+## 11. Done means
+
+- `python pipeline/main.py run --job JOB001` produces four files from a clean checkout, with no configuration and no API key.
 - Two consecutive runs produce byte-identical output.
-- Every number in the recruiter view can be traced to `value × weight` in the CSV.
-- A candidate with no edges renders as `No referral path` and is not dropped.
-- No module reachable from a default run imports a network library. The two that can reach one
-  (`llm.py`, `build_aliases.py`) do so inside a function, on an opt-in path — see `ARCHITECTURE.md` §7.
+- Every number in the recruiter view traces to `value × weight` in the CSV — including unverified rows, which trace against their own basis (§7).
+- A candidate with no edges renders as "No referral path" and is not dropped.
+- No module reachable from a default run imports a network library.

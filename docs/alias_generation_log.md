@@ -3,7 +3,7 @@
 Evidence of a real run of `pipeline/build_aliases.py` against a live model
 (`claude-sonnet-4-6`), captured in full below. This is the only script in the repo that calls a
 model — see the README's ["Where the model is used"](../README.md#where-the-model-is-used)
-section and `ARCHITECTURE.md` §8.
+section and `SPEC.md` §8.
 
 Run date: 2026-08-22. Command: `python pipeline/build_aliases.py`. Exit code: `0`.
 
