@@ -120,7 +120,9 @@ with an employee from `IDF Intelligence Unit` — while a genuine coincidence (t
 did both work at IDF Intelligence Unit) must still match.
 
 **Both signals are estimates; the truth comes from asking.** Each edge therefore carries
-`referral_feedback` — `not_requested`, `pending`, `insufficient`, `positive`, `reserved`. The
+`referral_feedback`. Two states are implemented — `not_requested` (the default) and `insufficient`
+(the colleague does not really know the candidate, so the path is retired). Three more are schema
+for the request workflow that does not exist yet: `pending`, `positive`, `reserved`. The
 adjustment sits **on top of** the match score rather than inside it, keeping the fit score clean and
 making it possible to later measure whether referrals predicted good hires. An `insufficient` reply
 retires that path so the same colleague is not asked again.

@@ -113,6 +113,22 @@ merely both drew a paycheck there.
 The recruiter-facing string never overstates: `worked together at Opta Sports, 2019-2021` when the
 dates confirm it, `both worked at IDF Intelligence Unit, no overlapping years` when they don't.
 
+**A tier is an estimate from data; the truth comes from asking.** Each edge therefore carries a
+feedback state, and the adjustment sits **on top of** the match score rather than inside it —
+`match_score` and `match_score_after_feedback` are separate columns.
+
+| State | Meaning | Built |
+| :---- | :---- | :--- |
+| `not_requested` | Nobody has been asked yet — the default on every edge | ✅ |
+| `insufficient` | The colleague replied "I don't really know them". The path is **retired** and never surfaced for that candidate again | ✅ |
+| `pending` | Asked, awaiting a reply | design |
+| `positive` | Happy to refer; feeds `match_score_after_feedback` | design |
+| `reserved` | Already referring this person to another role | design |
+
+Two of the five are wired: ingestion writes `not_requested`, and referral selection retires an
+`insufficient` edge before choosing. The other three need the request workflow that does not exist
+yet — the field is the schema for it, not a claim that it runs.
+
 ---
 
 ## 2. Assumptions
