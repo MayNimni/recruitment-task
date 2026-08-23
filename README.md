@@ -12,12 +12,16 @@ assumptions, what I'd add with more time.
 
 ---
 
-## Start here — no setup needed
+## Start here — nothing to install
 
-**Open [`index.html`](index.html) at the repo root** (double click — no server, no API key, no
-install). It lists the four open roles with their headline numbers; clicking one opens that role's
-recruiter view. Every report it links is committed, so it works on a fresh clone before you run
-anything.
+### 🔗 **[maynimni.github.io/recruitment-task](https://maynimni.github.io/recruitment-task/)**
+
+The live results, in your browser. It lists the four open roles with their headline numbers;
+clicking one opens that role's recruiter view — the ranked shortlist, every score broken into its
+seven components, and the colleague best placed to make an introduction.
+
+Same thing offline: clone the repo and double-click `index.html` at the root. No server, no API key,
+no install — every report is committed, so it works on a fresh clone before you run anything.
 
 ## Setup
 
