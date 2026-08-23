@@ -1,6 +1,6 @@
 """Flow B steps 5-8: referral selection, rationale/probe templates, and the
 two output writers. output.py must not import score.py or enrich.py
-(SPEC.md §8) — everything it needs arrives as plain data from main.py.
+(docs/reference/SPEC.md §8) — everything it needs arrives as plain data from main.py.
 apply_llm_briefs is the one exception: it imports llm.py, the standalone B7
 model seam, lazily and only when called (main.py's `match --llm` path) — llm.py
 is not a Flow A/B step owner, just an isolated model-call boundary, so it is
@@ -19,7 +19,7 @@ import pandas as pd
 TIER_RANK = {"A": 0, "B": 1, "C": 2, "D": 3}
 
 # B5 department-distance map. Not specified anywhere in the docs beyond "a
-# small explicit map" (SPEC.md §B5) naming same-department=0 and a named
+# small explicit map" (docs/reference/SPEC.md §B5) naming same-department=0 and a named
 # adjacent pair=1, so this is a judgment call, made explicit here rather than
 # buried in a lookup: departments that routinely work the same roadmap at a
 # sports-tech company are adjacent, everything else (including HR, Sales,
@@ -103,7 +103,7 @@ def build_rationale(pool_row: dict, requirements: dict, values: dict, matched: l
     # An unverified row has no enriched profile, so skills_canonical is empty and
     # every required skill lands in `missing` — but nothing was compared, so
     # "0/N matched" would state a finding the data does not support. Say what is
-    # actually known instead (SPEC.md §B3, unverified branch).
+    # actually known instead (docs/reference/SPEC.md §B3, unverified branch).
     if pool_row.get("unverified"):
         parts = [
             "No LinkedIn profile matched this contact — scored on title, field notes and "
@@ -248,7 +248,7 @@ def _build_job_summary(requirements: dict) -> dict:
 
 
 def note_meaning(pool_row: dict, requirements: dict):
-    """score_notes' domain-overlap check (SPEC.md §B3) in words, or None when
+    """score_notes' domain-overlap check (docs/reference/SPEC.md §B3) in words, or None when
     there is no on-site note. Pure set arithmetic over note_tags — no model,
     no network — so it is computed on every run, in build_match_row, and both
     the recruiter view and the B7 prompt read the one stashed value.
@@ -308,7 +308,7 @@ def apply_llm_briefs(match_rows: list, pool_rows_by_id: dict, requirements: dict
 
     Called only when main.py was invoked with `match --llm`; without that flag
     this function is never reached and the two columns stay empty (README.md /
-    SPEC.md §8: no model call without an explicit opt-in).
+    docs/reference/SPEC.md §8: no model call without an explicit opt-in).
     """
     import llm
 
@@ -390,7 +390,7 @@ def _html_escape(text: str) -> str:
 
 
 def _format_conference_date(date_str) -> str:
-    """conference_date is stored 'YYYY-MM-DD' (SPEC.md §A8). The recruiter view
+    """conference_date is stored 'YYYY-MM-DD' (docs/reference/SPEC.md §A8). The recruiter view
     only ever needs to attribute a quote to a month, so format it once here
     rather than shipping a raw ISO date (or a date-parsing helper) to the browser.
     """
@@ -444,7 +444,7 @@ def _row_to_data_item(row: dict, pool_row: dict) -> dict:
         "meaning": row.get("_note_meaning"),
         # `u`/`b` are emitted only for an unverified row, so a verified one's
         # payload is unchanged. `b` is the component list score_components
-        # actually computed (SPEC.md §B3, unverified branch); the recruiter
+        # actually computed (docs/reference/SPEC.md §B3, unverified branch); the recruiter
         # view normalizes over exactly those weights, as score.py does, and
         # labels the rest "not scored" instead of showing them as a zero.
         **({"u": True, "b": row["score_basis"].split(";")} if pool_row.get("unverified") else {}),
@@ -540,7 +540,7 @@ def write_index(jobs_df, pool_size: int, conference_count: int, template_path,
 def build_data_items(match_rows: list, pool_rows_by_id: dict) -> list:
     """Builds the recruiter-view DATA array, in the same rank order as the
     matches CSV, from the same in-memory rows build_match_row produced
-    (SPEC.md §B8: "written in the same call from the same in-memory rows").
+    (docs/reference/SPEC.md §B8: "written in the same call from the same in-memory rows").
     """
     return [
         _row_to_data_item(row, pool_rows_by_id[row["hubspot_id"]])
@@ -557,7 +557,7 @@ def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_c
     the in-memory `text` that becomes the file under output/.
 
     The JS patch: each DATA item now also carries `score`, the pipeline's
-    already-rounded match_score (round_half_up, SPEC.md §B4) — the same
+    already-rounded match_score (round_half_up, docs/reference/SPEC.md §B4) — the same
     number the CSV has. Recomputing that number in the browser from `v`
     (component values rounded to 4 decimals for display) can round to a
     different whole percent than the exact pipeline value does, so the
@@ -626,7 +626,7 @@ def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_c
     # refHtml() recomputes "why" client-side from r.shared/r.n, duplicating
     # the old shared-employer-or-mutual-count logic in JS. That would go
     # stale against referral_why()'s tier/overlap-aware text now on every
-    # edge as r.why, so the screen would contradict the CSV (SPEC.md §4).
+    # edge as r.why, so the screen would contradict the CSV (docs/reference/SPEC.md §4).
     # Patched to read the same string Python already computed.
     original_why = (
         "  const why = r.shared ? `both worked at ${esc(r.shared)}`\n"

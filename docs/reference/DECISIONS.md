@@ -125,7 +125,7 @@ adjustment sits **on top of** the match score rather than inside it, keeping the
 making it possible to later measure whether referrals predicted good hires. An `insufficient` reply
 retires that path so the same colleague is not asked again.
 
-One employee connects to 13 of the 75 attendees, so a per-employee request cap will be needed — the
+One employee connects to 14 of the 75 attendees, so a per-employee request cap will be needed — the
 number is a team decision.
 
 ### 2.4 Should candidates already in the ATS be flagged?

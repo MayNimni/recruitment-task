@@ -1,6 +1,6 @@
 """Flow A steps 2-8: join, skill normalization, note tagging, referral edges,
 tiering, and the pool write. Every function here is job-independent — none of
-them may read job_openings.csv (SPEC.md §0 invariants).
+them may read job_openings.csv (docs/reference/SPEC.md §0 invariants).
 
 List-valued fields move through this module as Python lists and are only
 joined into ';'-strings at the very end, in build_pool / write_pool.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-# A6 — generic tokens dropped before comparing former employers (SPEC.md §A6).
+# A6 — generic tokens dropped before comparing former employers (docs/reference/SPEC.md §A6).
 # Written in their natural (unstemmed) form; stem_token() is applied to this
 # set once, below, before it's used for lookups.
 GENERIC_COMPANY_TOKENS = frozenset({
@@ -29,7 +29,7 @@ def stem_token(token: str) -> str:
     A plural strip, not a lemmatizer: 'technologies' -> 'technologie', not
     'technology'. Applied identically to company-name tokens and to the
     drop-list itself, so 'sports' on the drop-list and 'sport' in a company
-    name resolve to the same token (SPEC.md §A6).
+    name resolve to the same token (docs/reference/SPEC.md §A6).
     """
     if len(token) > 4 and token.endswith("s"):
         return token[:-1]
@@ -90,7 +90,7 @@ def join_list(items) -> str:
 
 
 def normalize_linkedin_url(url) -> str:
-    """Strip whitespace and a leading scheme or 'www.' (SPEC.md §A2)."""
+    """Strip whitespace and a leading scheme or 'www.' (docs/reference/SPEC.md §A2)."""
     if url is None:
         return ""
     u = str(url).strip()
@@ -103,7 +103,7 @@ def join_profiles(attendees: pd.DataFrame, profiles: pd.DataFrame) -> pd.DataFra
     """A2. Left join attendees to profiles on normalized linkedin_url.
 
     A row with no match is kept: unverified=True and every profile-derived
-    column is ''. No name-based fallback (DECISIONS.md §2.2).
+    column is ''. No name-based fallback (docs/reference/DECISIONS.md §2.2).
     """
     left = attendees.copy()
     right = profiles.copy()
@@ -173,8 +173,8 @@ def extract_note_tags(note, aliases: dict):
     tokens plus their canonical forms via the alias table.
 
     Same seam pattern as resolve_unknown_alias: in production this extractor
-    is replaced by a model returning structured signal tags (DECISIONS.md §6.1
-    / SPEC.md §9). Note *value* is not computed here — that is B3.
+    is replaced by a model returning structured signal tags (docs/reference/DECISIONS.md §6.1
+    / docs/reference/SPEC.md §9). Note *value* is not computed here — that is B3.
     """
     note = "" if note is None else str(note)
     flagged_on_site = bool(note.strip())
@@ -208,7 +208,7 @@ def resolve_mutual_connections(row, employees_by_id: pd.DataFrame):
     actually in the list, mutual_count on a given edge is never a stand-in
     for "the candidate has some mutual connections somewhere" — it is >= 1
     exactly when THIS employee is one of them, and 0 on any edge added later
-    by find_shared_employers for an employee who isn't (SPEC.md §A5/§A7).
+    by find_shared_employers for an employee who isn't (docs/reference/SPEC.md §A5/§A7).
     """
     ids = split_list(row.get("wsc_mutual_connections", ""))
     mutual_count = len(ids)
@@ -293,7 +293,7 @@ def company_tokens(entry: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) ->
     >= 4. Shared by both sides of the A6 comparison. Whole-token equality
     only — never substring matching, which is what would incorrectly pair a
     candidate from Intel with an employee from an IDF Intelligence Unit
-    (SPEC.md §A6, DECISIONS.md §2.3).
+    (docs/reference/SPEC.md §A6, docs/reference/DECISIONS.md §2.3).
     """
     text = re.sub(r"\([^)]*\)", "", entry).lower()
     tokens = set()
@@ -310,7 +310,7 @@ def find_shared_employers(row, employees: pd.DataFrame, generic_tokens=GENERIC_C
     overlap_period) for the first employee work_history entry, matched
     against the first candidate past_titles entry (both in listed order),
     that shares a non-generic token of length >= 4. May match candidates
-    with mutual_count of 0 — that is the point of this step (SPEC.md §A6).
+    with mutual_count of 0 — that is the point of this step (docs/reference/SPEC.md §A6).
 
     Matching is done per individual entry on both sides (not on the union of
     an employee's whole history) so the matched pair's own dates are known
@@ -366,10 +366,10 @@ def assign_tier(edge: dict):
        no mutual connection
     D  shared employer, no overlap, no mutual connection
 
-    Overlap can only be nonzero when shared_employer is set (SPEC.md §A6 —
+    Overlap can only be nonzero when shared_employer is set (docs/reference/SPEC.md §A6 —
     it's derived from the matched company's dates), so "overlap without a
     shared employer" is not a case that needs handling. Every edge that
-    exists carries exactly one of these four tiers (DECISIONS.md §2.3) — an
+    exists carries exactly one of these four tiers (docs/reference/DECISIONS.md §2.3) — an
     edge that matches none of them is a bug upstream, so this raises rather
     than silently returning an empty tier.
     """

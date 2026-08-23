@@ -17,7 +17,7 @@ pool/<data-dir's name>/ and output/<data-dir's name>/, so a fixture run can
 never collide with or overwrite the real one.
 
 Owns argument parsing and sequencing only — no scoring or enrichment logic
-lives here (SPEC.md §8). ingest/enrich and score/output never import
+lives here (docs/reference/SPEC.md §8). ingest/enrich and score/output never import
 each other, so main.py is also where B2's read_pool lives and where a
 scored candidate's score.py values are joined with its output.py referral
 edge into one row.

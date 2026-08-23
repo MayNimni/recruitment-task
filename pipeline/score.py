@@ -1,8 +1,8 @@
 """Flow B steps 1-5: parse the job, score the seven components, normalize for
 unverified candidates, and rank. Arithmetic only — no network, no clock, no
-randomness (SPEC.md §0 invariants).
+randomness (docs/reference/SPEC.md §0 invariants).
 
-score.py must not import enrich.py or output.py (SPEC.md §8: "No
+score.py must not import enrich.py or output.py (docs/reference/SPEC.md §8: "No
 module imports another peer"), so the handful of tiny string/list helpers it
 needs are re-declared locally rather than shared.
 """
@@ -50,7 +50,7 @@ def tokenize_words(text) -> list:
 
 
 def clean_title(title: str) -> str:
-    """Part before ' - ', lowercase, seniority tokens removed (SPEC.md §B3)."""
+    """Part before ' - ', lowercase, seniority tokens removed (docs/reference/SPEC.md §B3)."""
     title = "" if title is None else str(title)
     head = title.split(" - ")[0]
     words = [w for w in tokenize_words(head) if w not in TITLE_SENIORITY_TOKENS]
@@ -74,7 +74,7 @@ def normalize_job_skill_list(raw_skills, aliases: dict) -> list:
     match on the alias table's own canonical values, then the alias table, then
     passthrough), applied here to a job's required_skills/nice_to_have instead
     of a candidate's top_skills. Duplicated rather than imported — score.py
-    may not import enrich.py (SPEC.md §8).
+    may not import enrich.py (docs/reference/SPEC.md §8).
     """
     tokens = raw_skills if isinstance(raw_skills, list) else split_list(raw_skills)
     canonical_by_lower = {}
@@ -96,7 +96,7 @@ def normalize_job_skill_list(raw_skills, aliases: dict) -> list:
 def build_domain_vocabulary(key_domains_raw, aliases: dict) -> set:
     """key_domains split on ';', tokenized into words, plus the alias-table
     expansion of any phrase or word that is itself an alias key, minus
-    stopwords (SPEC.md §B1).
+    stopwords (docs/reference/SPEC.md §B1).
     """
     canonical_by_lower = {c.lower() for c in aliases.values()}
     vocabulary = set()
@@ -119,7 +119,7 @@ def build_domain_vocabulary(key_domains_raw, aliases: dict) -> set:
 def parse_job(job_row, aliases: dict, title_families: dict, company_domains: dict) -> dict:
     """B1. Builds the full requirement set the seven components read.
 
-    SPEC.md's table lists this as parse_job(job_row, aliases); it takes two
+    docs/reference/SPEC.md's table lists this as parse_job(job_row, aliases); it takes two
     more config dicts here for the same reason A4's extract_note_tags needed
     `aliases` beyond its own table listing — the components need a complete,
     self-contained requirement bundle (title family for this job's
@@ -204,7 +204,7 @@ def score_title(pool_row: dict, requirements: dict) -> float:
     """Weight 25. min(1.0, core + seniority_bonus). Uses the candidate's
     self-reported `title`, not `current_title` — the former is always present
     (even when unverified), and title is one of the three components an
-    unverified candidate can still be scored on (SPEC.md §B3).
+    unverified candidate can still be scored on (docs/reference/SPEC.md §B3).
     """
     original_title = pool_row.get("title") or ""
     cleaned = clean_title(original_title)
@@ -298,8 +298,8 @@ COMPONENT_FUNCS = {
 def score_components(pool_row: dict, requirements: dict):
     """B3 + B4-normalize. Computes all seven components, unless the candidate
     is unverified, in which case only title/notes/conference are computed
-    (SPEC.md §B3) and the rest are None — never 0, which would read as poor
-    fit rather than unknown (DECISIONS.md §2.2/§4.2).
+    (docs/reference/SPEC.md §B3) and the rest are None — never 0, which would read as poor
+    fit rather than unknown (docs/reference/DECISIONS.md §2.2/§4.2).
 
     Returns (values: dict[str, float|None], score_basis: list[str]).
     """

@@ -77,7 +77,7 @@ def load_referral_feedback(data_dir: Path) -> dict:
     is written by the recruiter through HubSpot after they ask the colleague,
     and ingestion only carries whatever is already on record. This file is that
     record. data/ ships without one, so every real edge is 'not_requested';
-    data/edge_cases/ ships one so the retired-edge branch (SPEC.md B5) is
+    data/edge_cases/ ships one so the retired-edge branch (docs/reference/SPEC.md B5) is
     reproduced by `ingest` rather than hand-written into pool/.
     """
     path = data_dir / REFERRAL_FEEDBACK_FILE
@@ -95,7 +95,7 @@ def load_sources(data_dir) -> dict:
     """A1. Returns the four source dataframes plus the three config dicts.
 
     Flow A uses attendees, profiles, employees, skill_aliases. jobs is loaded
-    here (per SPEC.md §0) but Flow A must never read it: it is for B1's use.
+    here (per docs/reference/SPEC.md §0) but Flow A must never read it: it is for B1's use.
     title_families and company_domains are likewise Flow B-only configs,
     loaded here for the same reason jobs is: A1 is the single ingestion point
     for everything under data/.
