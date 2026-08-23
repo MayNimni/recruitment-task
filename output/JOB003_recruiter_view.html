@@ -30,7 +30,8 @@
   .summary { color:var(--ink); font-size:14.5px; line-height:1.5; margin:18px 0 2px; }
   .cols { display:grid; grid-template-columns:274px 1fr; gap:26px; margin-top:24px; align-items:start; }
   .panel { background:var(--rail); border-radius:10px; padding:18px 18px 14px; margin-bottom:16px; }
-  .panel h2 { font-size:15px; font-weight:500; margin:0 0 14px; }
+  .panel h2 { font-size:15px; font-weight:500; margin:0 0 6px; }
+  .panel-note { font-size:12px; line-height:1.5; color:var(--muted); margin:0 0 14px; }
   .w-row { margin-bottom:13px; }
   .w-row label { display:flex; justify-content:space-between; font-size:13px;
     color:var(--muted); margin-bottom:5px; }
@@ -135,6 +136,11 @@
     <aside>
       <div class="panel">
         <h2>Weights</h2>
+        <p class="panel-note">How much each signal counts, out of 100. <b>Drag any slider</b> to
+        re-weight this role — if experience matters less here than skills, turn it down and the list
+        re-ranks as you move it. Your changes stay on this screen: they are never saved, and the
+        exported CSV always carries the defaults, so a shortlist you email means one fixed thing.
+        <b>Reset</b> puts them back.</p>
         
       <div class="w-row">
         <label for="w-skills">Skills<output id="o-skills">30</output></label>
@@ -175,6 +181,7 @@
       </div>
       <div class="panel">
         <h2>Filters</h2>
+        <p class="panel-note">Narrow the list without changing any score.</p>
         <div class="f-row"><input type="checkbox" id="f-ref"><label for="f-ref">Has a referral path</label></div>
         <div class="f-row"><input type="checkbox" id="f-shared"><label for="f-shared">Shared employer only</label></div>
         <div class="f-row"><input type="checkbox" id="f-notes"><label for="f-notes">Spoken to on site</label></div>
