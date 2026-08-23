@@ -1,0 +1,6 @@
+pandas>=2.0
+
+# Optional, build-time only: required solely by pipeline/build_aliases.py, which
+# regenerates data/skill_aliases.json offline. The pipeline itself (main.py and
+# everything it imports) never calls a model and does not need this package.
+# anthropic>=0.40
