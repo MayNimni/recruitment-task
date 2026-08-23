@@ -128,17 +128,40 @@ ATS flagging, refresh cadence, trigger ownership, and privacy/GDPR handling.
 
 ## Edge case handling
 
-**The unverified-profile branch (no LinkedIn match) is implemented but not exercised by the
-supplied data.** All 75 conference attendees in `data/conference_attendees.csv` match a row in
-`data/linkedin_profiles.csv` on `linkedin_url` — confirmed by running Flow A and checking
-`pool/talent_pool.csv`, where every row has `unverified = False`. The code path exists, is
-documented, and is unit-testable (`enrich.join_profiles` sets `unverified = True` and leaves
-profile-derived fields empty on a left-join miss; `score.score_components` then scores only
-`title`/`notes`/`conference` and `rank` normalizes over the sum of those three weights instead of
-100), but no row in this submission's dataset takes that path. See `DECISIONS.md` §2.2 and
-`ARCHITECTURE.md` §10 for the full statement of this and other failure modes (empty
-`wsc_mutual_connections`, no referral edges at all, an unknown skill alias, an absent note, an
-`insufficient` referral edge, an empty pool, an unknown `job_id`).
+**The unverified-profile branch (no LinkedIn match), and five other edge cases the supplied data
+never exercises, are now demonstrated by a fixture.** All 75 conference attendees in
+`data/conference_attendees.csv` still match a row in `data/linkedin_profiles.csv` on `linkedin_url` —
+confirmed by running Flow A and checking `pool/talent_pool.csv`, where every row has
+`unverified = False` — so nothing in the *supplied* dataset takes the unverified path, and the same
+is true for five of ARCHITECTURE.md §10's other failure-mode rows. `data/edge_cases/` adds a small,
+unmistakably-fake synthetic fixture — same four filenames, the real WSC employee roster reused where
+possible — built to hit exactly the branches the supplied data leaves cold: no `linkedin_url` at all,
+a `linkedin_url` matching no profile, empty `top_skills`, no note, no mutual connections and no shared
+employer, a `past_titles` date that's missing or unparseable, an open-ended `(YYYY-present)` tenure, a
+retired (`referral_feedback = insufficient`) referral edge, blank `years_experience`, a skill spelling
+absent from the alias table, and a title in no `title_family`. Run it with:
+
+```bash
+python pipeline/main.py ingest --data-dir data/edge_cases
+python pipeline/main.py match --job JOB001 --data-dir data/edge_cases
+```
+
+`--data-dir` namespaces `pool/` and `output/` by the data directory's name, so this never touches the
+real `pool/` or `output/`; the fixture's own output is committed at `output/edge_cases/`. The
+referral-specific states (worked together with dates, shared employer with no overlap, 3+ mutual
+connections, 1–2, no referral path, a retired edge) are tabulated with exact recruiter-facing strings
+in `DECISIONS.md` §2.3. See `DECISIONS.md` §2.2 and `ARCHITECTURE.md` §10 for the full statement of
+these failure modes, including the two (an empty `pool/` directory, an unknown `job_id`) that are
+CLI-argument failures rather than data shapes and so stay outside this fixture.
+
+**A finding from that fixture, not a bug to fix:** the unverified candidate built to score well on
+title/note/conference alone (`EC001 "Testcase Unverified"`) ranks **#1 of 13, at `match_score` 100**
+— strictly ahead of every verified candidate in the fixture pool. Nothing about this is a scoring
+error; `score.score_components` normalizes an unverified row over exactly the three weights it can
+compute (title 25 + notes 10 + conference 2 = 37), and a candidate that maxes all three reaches 100
+by construction. It does mean a self-reported, never-enriched record can outrank verified ones on the
+strength of a title and an on-site note alone — worth a second look before this ships, even though no
+row in the supplied 75-attendee dataset happens to trigger it.
 
 ## Executive summary for non-technical HR
 

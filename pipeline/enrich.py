@@ -61,9 +61,18 @@ POOL_COLUMNS = [
 
 EDGE_COLUMNS = [
     "hubspot_id", "employee_id", "employee_name", "employee_title",
-    "employee_department", "mutual_count", "shared_employer", "tier",
-    "referral_feedback",
+    "employee_department", "mutual_count", "shared_employer",
+    "overlap_years", "overlap_period", "tier", "referral_feedback",
 ]
+
+# A6 — trailing '(YYYY-YYYY)' or open-ended '(YYYY-present)' tenure suffix.
+TENURE_RE = re.compile(r"\((\d{4})-(present|\d{4})\)\s*$", re.IGNORECASE)
+
+# A6 — candidate past_titles entries are "Title at Company (YYYY-YYYY)";
+# employee work_history entries are already bare "Company (YYYY-YYYY)". This
+# strips up to the first ' at ' so both sides land in the same shape before
+# company_tokens/parse_tenure see them.
+TITLE_PREFIX_RE = re.compile(r"^.+? at ")
 
 
 def split_list(raw) -> list:
@@ -194,6 +203,12 @@ def resolve_mutual_connections(row, employees_by_id: pd.DataFrame):
     """A5. One edge per listed employee id; mutual_count is identical across
     every edge produced for this candidate. Unknown ids are skipped rather
     than fabricated into an edge.
+
+    Because an edge is only ever created here for an employee_id that was
+    actually in the list, mutual_count on a given edge is never a stand-in
+    for "the candidate has some mutual connections somewhere" — it is >= 1
+    exactly when THIS employee is one of them, and 0 on any edge added later
+    by find_shared_employers for an employee who isn't (SPEC.md §A5/§A7).
     """
     ids = split_list(row.get("wsc_mutual_connections", ""))
     mutual_count = len(ids)
@@ -211,8 +226,65 @@ def resolve_mutual_connections(row, employees_by_id: pd.DataFrame):
             "employee_department": emp["department"],
             "mutual_count": mutual_count,
             "shared_employer": "",
+            "overlap_years": 0,
+            "overlap_period": "",
         })
     return edges, mutual_count
+
+
+def parse_tenure(entry: str):
+    """A6. Parse a trailing '(YYYY-YYYY)' or open-ended '(YYYY-present)'
+    suffix into (start_year, end_year), where end_year is None for
+    'present'. Returns None if the entry carries no such suffix at all —
+    dirty data (e.g. "Backend Engineer at Sportradar (2016-2020 then
+    rejoined 2022)") still gets a company-name comparison via company_tokens,
+    it just can't contribute a computable overlap.
+    """
+    match = TENURE_RE.search(entry.strip())
+    if not match:
+        return None
+    start = int(match.group(1))
+    end_raw = match.group(2)
+    end = None if end_raw.lower() == "present" else int(end_raw)
+    return start, end
+
+
+def strip_title_prefix(entry: str) -> str:
+    """A6. Strip a candidate past_titles entry's leading 'Title at ' down to
+    the bare 'Company (YYYY-YYYY)' shape employee work_history entries are
+    already in. A no-op when there's no ' at ' to find (e.g. "Freelance
+    developer (2021-2022)").
+    """
+    return TITLE_PREFIX_RE.sub("", entry, count=1)
+
+
+def company_display_name(entry: str) -> str:
+    """The company name with its trailing date parenthetical removed, for
+    display (shared_employer, overlap_period) rather than for matching —
+    company_tokens does its own paren-stripping and tokenizing separately.
+    """
+    return re.sub(r"\([^)]*\)", "", entry).strip()
+
+
+def compute_overlap(candidate_tenure, employee_tenure):
+    """A6. Overlap = max(start) < min(end); an open-ended 'present' end
+    never constrains min(end) unless both sides are open-ended, which never
+    happens here (only candidate entries carry 'present'). Returns
+    (overlap_years, overlap_period), (0, "") when either side failed to
+    parse a tenure at all or the ranges never coincide.
+    """
+    if candidate_tenure is None or employee_tenure is None:
+        return 0, ""
+    cand_start, cand_end = candidate_tenure
+    emp_start, emp_end = employee_tenure
+    ends = [e for e in (cand_end, emp_end) if e is not None]
+    if not ends:
+        return 0, ""
+    overlap_start = max(cand_start, emp_start)
+    overlap_end = min(ends)
+    if overlap_start >= overlap_end:
+        return 0, ""
+    return overlap_end - overlap_start, f"{overlap_start}-{overlap_end}"
 
 
 def company_tokens(entry: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) -> set:
@@ -233,59 +305,92 @@ def company_tokens(entry: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) ->
     return tokens
 
 
-def employee_company_tokens(work_history: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) -> set:
-    tokens = set()
-    for entry in split_list(work_history):
-        tokens |= company_tokens(entry, generic_tokens)
-    return tokens
-
-
 def find_shared_employers(row, employees: pd.DataFrame, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED):
-    """A6. Yields (employee_id, matched_company_name) for every employee whose
-    work_history shares a non-generic token of length >= 4 with one of the
-    candidate's past_companies entries. May match candidates with mutual_count
-    of 0 — that is the point of this step (SPEC.md §A6).
+    """A6. Yields (employee_id, matched_company_name, overlap_years,
+    overlap_period) for the first employee work_history entry, matched
+    against the first candidate past_titles entry (both in listed order),
+    that shares a non-generic token of length >= 4. May match candidates
+    with mutual_count of 0 — that is the point of this step (SPEC.md §A6).
+
+    Matching is done per individual entry on both sides (not on the union of
+    an employee's whole history) so the matched pair's own dates are known
+    and an overlap can be computed from them.
     """
-    candidate_token_sets = [
-        (entry, company_tokens(entry, generic_tokens))
-        for entry in split_list(row.get("past_companies", ""))
-    ]
+    candidate_entries = []
+    for raw in split_list(row.get("past_titles", "")):
+        stripped = strip_title_prefix(raw)
+        cand_tokens = company_tokens(stripped, generic_tokens)
+        if not cand_tokens:
+            continue
+        candidate_entries.append((
+            company_display_name(stripped), cand_tokens, parse_tenure(stripped),
+        ))
 
     matches = []
     for _, emp in employees.iterrows():
-        emp_tokens = employee_company_tokens(emp["work_history"], generic_tokens)
-        if not emp_tokens:
-            continue
-        for entry, cand_tokens in candidate_token_sets:
-            if cand_tokens & emp_tokens:
-                matches.append((emp["employee_id"], entry))
+        employee_entries = [
+            (company_tokens(entry, generic_tokens), parse_tenure(entry))
+            for entry in split_list(emp["work_history"])
+        ]
+
+        found = None
+        for cand_name, cand_tokens, cand_tenure in candidate_entries:
+            for emp_tokens, emp_tenure in employee_entries:
+                if cand_tokens & emp_tokens:
+                    found = (cand_name, cand_tenure, emp_tenure)
+                    break
+            if found:
                 break
+
+        if found is None:
+            continue
+        cand_name, cand_tenure, emp_tenure = found
+        overlap_years, overlap_period = compute_overlap(cand_tenure, emp_tenure)
+        matches.append((emp["employee_id"], cand_name, overlap_years, overlap_period))
     return matches
 
 
 def assign_tier(edge: dict):
-    """A7. A = shared employer AND mutual_count>=1. B = no shared employer,
-    mutual_count>=3. C = shared employer AND mutual_count==0. D = no shared
-    employer, mutual_count in {1,2}. Shared employment corroborates a
-    connection rather than substituting for one (SPEC.md §A7,
-    DECISIONS.md §2.3) — a shared employer with zero mutual connections is
-    weaker evidence than a shared employer confirmed by at least one mutual
-    connection. Every edge that exists carries one of these four tiers; a
-    candidate with no edge at all simply has no row, so this only returns
-    None for a shared_employer/mutual_count combination that resolve_mutual_connections
-    and find_shared_employers never actually produce.
+    """A7. Combines three signals: a shared former employer, whether the two
+    people's tenures there actually overlap, and whether this specific
+    employee is one of the candidate's listed mutual connections. The third
+    signal is mutual_count >= 1 on THIS edge, not "the candidate has some
+    mutual connections somewhere" — see resolve_mutual_connections, which
+    only ever sets a nonzero mutual_count on an employee's edge when that
+    employee's id was actually in the candidate's list.
+
+    A  shared employer, tenures overlap, mutual connection
+    B  no shared employer, mutual_count >= 3
+    C  mutual_count in {1, 2} (shared or not) — or shared employer with no
+       overlap but a mutual connection — or shared employer with overlap but
+       no mutual connection
+    D  shared employer, no overlap, no mutual connection
+
+    Overlap can only be nonzero when shared_employer is set (SPEC.md §A6 —
+    it's derived from the matched company's dates), so "overlap without a
+    shared employer" is not a case that needs handling. Every edge that
+    exists carries exactly one of these four tiers (DECISIONS.md §2.3) — an
+    edge that matches none of them is a bug upstream, so this raises rather
+    than silently returning an empty tier.
     """
     shared = bool(edge.get("shared_employer"))
-    count = edge.get("mutual_count", 0)
-    if shared and count >= 1:
+    overlap = int(edge.get("overlap_years", 0)) > 0
+    count = int(edge.get("mutual_count", 0))
+    mutual = count >= 1
+
+    if shared and overlap and mutual:
         return "A"
     if not shared and count >= 3:
         return "B"
-    if shared and count == 0:
+    if count in (1, 2):
         return "C"
-    if not shared and count in (1, 2):
+    if shared and overlap and not mutual:
+        return "C"
+    if shared and not overlap and mutual:
+        return "C"
+    if shared and not overlap and not mutual:
         return "D"
-    return None
+    raise AssertionError(f"edge matches no tier: {edge}")
 
 
 def build_pool(sources: dict):
@@ -349,11 +454,14 @@ def build_pool(sources: dict):
             edges_by_key[key] = edge
             edges_order.append(key)
 
-        for employee_id, matched_company in find_shared_employers(row, employees):
+        for employee_id, matched_company, overlap_years, overlap_period in find_shared_employers(row, employees):
             key = (row["hubspot_id"], employee_id)
             if key in edges_by_key:
-                if not edges_by_key[key]["shared_employer"]:
-                    edges_by_key[key]["shared_employer"] = matched_company
+                existing = edges_by_key[key]
+                if not existing["shared_employer"]:
+                    existing["shared_employer"] = matched_company
+                    existing["overlap_years"] = overlap_years
+                    existing["overlap_period"] = overlap_period
             else:
                 emp = employees_by_id.loc[employee_id]
                 new_edge = {
@@ -364,6 +472,8 @@ def build_pool(sources: dict):
                     "employee_department": emp["department"],
                     "mutual_count": 0,
                     "shared_employer": matched_company,
+                    "overlap_years": overlap_years,
+                    "overlap_period": overlap_period,
                 }
                 edges_by_key[key] = new_edge
                 edges_order.append(key)

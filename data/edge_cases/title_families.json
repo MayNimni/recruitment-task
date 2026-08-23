@@ -1,0 +1,38 @@
+{
+  "AI/ML": [
+    "ml engineer",
+    "machine learning engineer",
+    "ml research engineer",
+    "research engineer",
+    "ai engineer",
+    "computer vision engineer",
+    "cv engineer",
+    "deep learning engineer",
+    "data scientist"
+  ],
+  "Engineering": [
+    "backend engineer",
+    "software engineer",
+    "backend developer",
+    "software developer",
+    "platform engineer",
+    "devops engineer",
+    "infrastructure engineer",
+    "site reliability engineer",
+    "sre",
+    "network engineer",
+    "cloud engineer",
+    "solutions architect",
+    "it engineer"
+  ],
+  "Data": [
+    "data engineer",
+    "data platform engineer",
+    "data analyst",
+    "analytics engineer",
+    "data scientist"
+  ],
+  "Product": [
+    "product manager"
+  ]
+}

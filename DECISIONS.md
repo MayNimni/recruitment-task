@@ -94,34 +94,51 @@ signals.
 candidate is strong with zero connections. What the team asked for is *who to ask*, so the output
 names the person: "Ask Maya Levi, Senior ML Engineer, AI/ML."
 
-The roster carries dated `work_history`, so a shared former employer is directly computable — the
-strongest referral signal available, and one connection count cannot see.
+The roster's `work_history` carries dates, and so — despite an earlier version of this document
+claiming otherwise — does the candidate side: `past_titles` is `"Title at Company (YYYY-YYYY)"`,
+open-ended as `"...-present"` for a current role. Once both sides are parsed, a shared former
+employer stops being the strongest signal *available* and becomes something better: two people who
+can be shown to have actually overlapped there, not merely both drawn a paycheck from the same
+company at some point.
 
 | Tier | Condition | What it means for the recruiter |
 | :---- | :---- | :---- |
-| A | Shared former employer AND 1+ mutual connections | Ask this person first |
+| A | Shared former employer, tenure dates confirmed to overlap, AND a mutual connection | Ask this person first — they overlapped, and know someone in common |
 | B | No shared employer, 3+ mutual connections | Familiarity is plausible |
-| C | Shared former employer, 0 mutual connections | Worked at the same company, may not have overlapped — worth a careful ask |
-| D | No shared employer, 1–2 mutual connections | Worth a reference check |
+| C | 1–2 mutual connections (with or without a shared employer) — or a shared employer whose dates don't overlap but is corroborated by a mutual connection — or a shared employer with confirmed overlap but no mutual connection | Worth a careful ask |
+| D | Shared former employer, no overlap, no mutual connection | Weakest signal that still clears the bar for a row |
 
-Shared employment corroborates a connection, not a substitute for one: the earlier scale fired tier
-A on a shared former employer alone, even with zero mutual connections, which put 10 of 16 tier-A
-edges in front of a recruiter with no evidence the two people had ever actually met. Now a shared
-employer only reaches tier A alongside at least one mutual connection; on its own it lands at tier C.
-Tier D is now a stored value like the others, not the absence of a relationship — an edge that
-exists always carries one of these four tiers. Only a candidate with no edge at all — no shared
-employer and no mutual connections — has no referral row.
+Shared employment corroborates a connection, not a substitute for one — and now that overlap is
+computable, "corroborates" means something stricter than it used to: a shared employer only reaches
+tier A alongside *both* a mutual connection *and* confirmed overlapping tenure. A shared employer
+whose dates don't overlap, or that has no mutual connection behind it, no longer outranks a plain
+1–2-connection lead — both land at tier C, on the reasoning that neither is stronger evidence than
+the other. Tier D — a shared employer with neither overlap nor a mutual connection — is a stored
+value like the others, not the absence of a relationship. Only a candidate with no edge at all — no
+shared employer and no mutual connections — has no referral row.
 
 **What the data shows.** Of 75 attendees, 33 have no mutual connections, 37 have one or two, and only
 5 reach three — so connection count alone separates almost nobody at the top. Shared-employer
-matching finds a path for 10 candidates: it corroborates an existing connection in 11 pairs (tier A)
-and surfaces 5 pairs that connection data misses entirely — those 5 land in tier C, not tier A,
-since a shared employer with no mutual connections is corroboration with nothing to corroborate.
+matching against dated `past_titles` finds 20 candidate-employee pairs across 12 candidates. Of those
+20: 16 have tenure dates that actually overlap, and 4 share a company the two people never
+overlapped at (one of those 4 is a dirty-data case — a malformed date range that still matches on
+company name but yields no parseable dates, so it's treated the same as "no overlap" rather than
+guessed at). Overlap plus a mutual connection is what reaches tier A: 12 pairs. The remaining 8
+shared-employer pairs split across tier C (6: 2 with no overlap but a mutual connection, 4 with
+overlap but no mutual connection) and tier D (2: neither). Old tier D — no shared employer, 1–2
+mutual connections — no longer exists as a separate bucket; it folds into tier C, since a bare 1–2
+connections is no weaker a lead than a shared employer nobody can vouch for.
 
-**Two limitations, stated.** Candidate past companies carry no dates, so a match proves a shared
-employer, not a shared tenure — the output says "both worked at Mobileye", never "worked together".
-And matching must be token-bounded: naive substring matching pairs a candidate from Intel with an
-employee from an IDF intelligence unit.
+**Two limitations, stated — one resolved, one still open.** The first is resolved: candidate
+`past_titles` *does* carry dates, so the output can now say "worked together at Mobileye,
+2019-2021" once both people's tenures there are confirmed to overlap — not merely "both worked at
+Mobileye". That stronger phrasing is only ever used when the dates back it up; a shared employer with
+no confirmed overlap still reads as "both worked at X, no overlapping years". The second limitation
+stands: matching must stay token-bounded, because naive substring matching would pair a candidate
+from Intel with an employee from an IDF Intelligence Unit — both this document's earlier example and
+this submission's data (Priya Anand vs. David Cohen) confirm the token-bounded match correctly finds
+nothing there, while a real, separate coincidence (Grace Wilson and David Cohen genuinely both worked
+at "IDF Intelligence Unit") still matches.
 
 **Both signals are estimates; the truth comes from asking.** The pool therefore carries a
 `referral_feedback` field with five states — `not_requested`, `pending`, `insufficient`, `positive`,
@@ -129,7 +146,27 @@ employee from an IDF intelligence unit.
 score clean and making it possible to later measure whether referrals predicted good hires. Note the
 implication of `insufficient`: three mutual connections who all answer "I don't really know them"
 means those three connections were noise, and the path is retired so the same colleague is not asked
-again. In this submission the field exists and is unpopulated.
+again. In the supplied data the field is unpopulated — every edge is `not_requested`, since nothing
+has been asked yet, and nothing in Flow A ever writes `insufficient` (that's a later feedback loop
+this submission doesn't implement). `data/edge_cases/` adds a small synthetic fixture — same four
+filenames, same WSC roster — that ingests normally and then has one edge's `referral_feedback`
+hand-patched to `insufficient`, specifically to exercise retirement end to end. Run against JOB001
+(`python pipeline/main.py match --job JOB001 --data-dir data/edge_cases`), committed at
+`output/edge_cases/`.
+
+**Every referral state the recruiter view can render, the exact string it shows, and a candidate it
+fires on** — five straight from the supplied JOB001 run; the sixth (retirement) only from the
+`data/edge_cases` fixture, because no combination of the supplied CSVs produces an `insufficient`
+edge — there's simply no `insufficient` value anywhere to select against:
+
+| Condition | String shown | Candidate |
+| :---- | :---- | :---- |
+| Shared employer, tenures confirmed to overlap (tier A) | `worked together at Opta Sports, 2019-2021` | HS013 Marcus Reid |
+| Shared employer, no overlapping years (tier C or D) | `both worked at IDF Intelligence Unit, no overlapping years` | HS026 Grace Wilson (tier D) |
+| 3+ mutual connections, no shared employer (tier B) | `3 mutual connections` | HS025 Lucas Evans |
+| 1–2 mutual connections (tier C) | `2 mutual connections` (singular form confirmed too: HS044 Sara Lindqvist gets `1 mutual connection`) | HS068 Chiara Russo |
+| No shared employer and no mutual connections — no `referral_*` row at all | recruiter view: "No referral path" | HS041 Viktor Novak |
+| Best edge retired (`referral_feedback = insufficient`) | before retirement: `worked together at Mobileye, 2019-2021` (Maya Levi, tier A) — after: `3 mutual connections` (Itai Nahum, tier B) | `data/edge_cases` fixture, EC008 "Edge Retired" — not producible from the supplied CSVs |
 
 Where several employees connect to one candidate, the one whose department is closest to the role is
 surfaced first. One employee connects to 13 of the 75 attendees, so a request cap will be needed —

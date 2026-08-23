@@ -1,0 +1,10 @@
+hubspot_id,employee_id,employee_name,employee_title,employee_department,mutual_count,shared_employer,overlap_years,overlap_period,tier,referral_feedback
+EC006,WSC006,Tal Mizrahi,Backend Engineer,Engineering,0,Sportradar,0,,D,not_requested
+EC007,WSC006,Tal Mizrahi,Backend Engineer,Engineering,1,Sportradar,1,2019-2020,A,not_requested
+EC008,WSC001,David Cohen,VP Engineering,Engineering,3,,0,,B,not_requested
+EC008,WSC002,Maya Levi,Senior ML Engineer,AI/ML,3,Mobileye,2,2019-2021,A,insufficient
+EC008,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,,0,,B,not_requested
+EC009,WSC004,Avi Goldberg,Data Engineer,Data,2,,0,,C,not_requested
+EC009,WSC012,Dana Friedman,Sales Engineer,Sales,2,,0,,C,not_requested
+EC013,WSC001,David Cohen,VP Engineering,Engineering,0,Akamai Technologies,0,,D,not_requested
+EC013,WSC009,Yuval Stern,DevOps Engineer,Engineering,0,Akamai Technologies,0,,D,not_requested

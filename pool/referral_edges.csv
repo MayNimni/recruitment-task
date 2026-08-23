@@ -1,85 +1,86 @@
-hubspot_id,employee_id,employee_name,employee_title,employee_department,mutual_count,shared_employer,tier,referral_feedback
-HS001,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,D,not_requested
-HS001,WSC008,Liron Katz,Sports Data Analyst,Data,0,Opta Sports,C,not_requested
-HS001,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,Opta Sports,A,not_requested
-HS002,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,Mobileye,A,not_requested
-HS002,WSC011,Eran Moshe,CTO,Leadership,2,,D,not_requested
-HS004,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS004,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,D,not_requested
-HS006,WSC004,Avi Goldberg,Data Engineer,Data,2,,D,not_requested
-HS006,WSC008,Liron Katz,Sports Data Analyst,Data,2,,D,not_requested
-HS007,WSC006,Tal Mizrahi,Backend Engineer,Engineering,1,,D,not_requested
-HS009,WSC001,David Cohen,VP Engineering,Engineering,2,Akamai,A,not_requested
-HS009,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS009,WSC009,Yuval Stern,DevOps Engineer,Engineering,0,Akamai,C,not_requested
-HS011,WSC004,Avi Goldberg,Data Engineer,Data,1,Nielsen Sports,A,not_requested
-HS011,WSC006,Tal Mizrahi,Backend Engineer,Engineering,0,Sportradar,C,not_requested
-HS011,WSC008,Liron Katz,Sports Data Analyst,Data,0,Nielsen Sports,C,not_requested
-HS013,WSC002,Maya Levi,Senior ML Engineer,AI/ML,3,,B,not_requested
-HS013,WSC008,Liron Katz,Sports Data Analyst,Data,0,Opta Sports,C,not_requested
-HS013,WSC011,Eran Moshe,CTO,Leadership,3,,B,not_requested
-HS013,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,Opta Sports,A,not_requested
-HS015,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS015,WSC014,Michal Barak,Backend Engineer,Engineering,2,,D,not_requested
-HS017,WSC001,David Cohen,VP Engineering,Engineering,3,,B,not_requested
-HS017,WSC004,Avi Goldberg,Data Engineer,Data,3,,B,not_requested
-HS017,WSC008,Liron Katz,Sports Data Analyst,Data,3,,B,not_requested
-HS019,WSC002,Maya Levi,Senior ML Engineer,AI/ML,1,,D,not_requested
-HS021,WSC003,Noa Shapiro,Senior Product Manager,Product,2,,D,not_requested
-HS021,WSC012,Dana Friedman,Sales Engineer,Sales,2,,D,not_requested
-HS023,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS023,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS025,WSC002,Maya Levi,Senior ML Engineer,AI/ML,3,,B,not_requested
-HS025,WSC011,Eran Moshe,CTO,Leadership,3,,B,not_requested
-HS025,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,,B,not_requested
-HS027,WSC008,Liron Katz,Sports Data Analyst,Data,1,,D,not_requested
-HS029,WSC004,Avi Goldberg,Data Engineer,Data,2,,D,not_requested
-HS029,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS031,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS031,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS033,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS033,WSC014,Michal Barak,Backend Engineer,Engineering,2,,D,not_requested
-HS035,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,D,not_requested
-HS035,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,D,not_requested
-HS037,WSC003,Noa Shapiro,Senior Product Manager,Product,3,,B,not_requested
-HS037,WSC011,Eran Moshe,CTO,Leadership,3,,B,not_requested
-HS037,WSC012,Dana Friedman,Sales Engineer,Sales,3,,B,not_requested
-HS039,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS039,WSC004,Avi Goldberg,Data Engineer,Data,2,,D,not_requested
-HS040,WSC004,Avi Goldberg,Data Engineer,Data,3,Nielsen Sports,A,not_requested
-HS040,WSC008,Liron Katz,Sports Data Analyst,Data,3,Nielsen Sports,A,not_requested
-HS040,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,,B,not_requested
-HS042,WSC004,Avi Goldberg,Data Engineer,Data,2,,D,not_requested
-HS042,WSC008,Liron Katz,Sports Data Analyst,Data,2,,D,not_requested
-HS044,WSC002,Maya Levi,Senior ML Engineer,AI/ML,1,,D,not_requested
-HS046,WSC008,Liron Katz,Sports Data Analyst,Data,2,Opta,A,not_requested
-HS046,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,Opta,A,not_requested
-HS048,WSC008,Liron Katz,Sports Data Analyst,Data,1,,D,not_requested
-HS050,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS050,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS051,WSC011,Eran Moshe,CTO,Leadership,1,,D,not_requested
-HS053,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,D,not_requested
-HS055,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS055,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS057,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS057,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS059,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS059,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS061,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS061,WSC011,Eran Moshe,CTO,Leadership,2,,D,not_requested
-HS062,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,D,not_requested
-HS064,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS064,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS066,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS066,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,D,not_requested
-HS068,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,D,not_requested
-HS068,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,D,not_requested
-HS069,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,D,not_requested
-HS070,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS070,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,D,not_requested
-HS072,WSC001,David Cohen,VP Engineering,Engineering,2,,D,not_requested
-HS072,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,D,not_requested
-HS074,WSC003,Noa Shapiro,Senior Product Manager,Product,2,,D,not_requested
-HS074,WSC012,Dana Friedman,Sales Engineer,Sales,2,,D,not_requested
-HS075,WSC001,David Cohen,VP Engineering,Engineering,2,Akamai,A,not_requested
-HS075,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,Akamai,A,not_requested
+hubspot_id,employee_id,employee_name,employee_title,employee_department,mutual_count,shared_employer,overlap_years,overlap_period,tier,referral_feedback
+HS001,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,0,,C,not_requested
+HS001,WSC008,Liron Katz,Sports Data Analyst,Data,0,Opta Sports,2,2019-2021,C,not_requested
+HS001,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,Opta Sports,2,2019-2021,A,not_requested
+HS002,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,Mobileye,2,2019-2021,A,not_requested
+HS002,WSC011,Eran Moshe,CTO,Leadership,2,,0,,C,not_requested
+HS004,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS004,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,0,,C,not_requested
+HS006,WSC004,Avi Goldberg,Data Engineer,Data,2,,0,,C,not_requested
+HS006,WSC008,Liron Katz,Sports Data Analyst,Data,2,,0,,C,not_requested
+HS007,WSC006,Tal Mizrahi,Backend Engineer,Engineering,1,,0,,C,not_requested
+HS009,WSC001,David Cohen,VP Engineering,Engineering,2,Akamai,1,2019-2020,A,not_requested
+HS009,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS009,WSC009,Yuval Stern,DevOps Engineer,Engineering,0,Akamai,1,2019-2020,C,not_requested
+HS011,WSC004,Avi Goldberg,Data Engineer,Data,1,Nielsen Sports,2,2020-2022,A,not_requested
+HS011,WSC006,Tal Mizrahi,Backend Engineer,Engineering,0,Sportradar,2,2018-2020,C,not_requested
+HS011,WSC008,Liron Katz,Sports Data Analyst,Data,0,Nielsen Sports,0,,D,not_requested
+HS013,WSC002,Maya Levi,Senior ML Engineer,AI/ML,3,,0,,B,not_requested
+HS013,WSC008,Liron Katz,Sports Data Analyst,Data,0,Opta Sports,2,2019-2021,C,not_requested
+HS013,WSC011,Eran Moshe,CTO,Leadership,3,,0,,B,not_requested
+HS013,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,Opta Sports,2,2019-2021,A,not_requested
+HS015,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,Sportradar,0,,C,not_requested
+HS015,WSC014,Michal Barak,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS017,WSC001,David Cohen,VP Engineering,Engineering,3,,0,,B,not_requested
+HS017,WSC004,Avi Goldberg,Data Engineer,Data,3,,0,,B,not_requested
+HS017,WSC008,Liron Katz,Sports Data Analyst,Data,3,,0,,B,not_requested
+HS019,WSC002,Maya Levi,Senior ML Engineer,AI/ML,1,,0,,C,not_requested
+HS021,WSC003,Noa Shapiro,Senior Product Manager,Product,2,,0,,C,not_requested
+HS021,WSC012,Dana Friedman,Sales Engineer,Sales,2,,0,,C,not_requested
+HS023,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS023,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS025,WSC002,Maya Levi,Senior ML Engineer,AI/ML,3,,0,,B,not_requested
+HS025,WSC011,Eran Moshe,CTO,Leadership,3,,0,,B,not_requested
+HS025,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,,0,,B,not_requested
+HS026,WSC001,David Cohen,VP Engineering,Engineering,0,IDF Intelligence Unit,0,,D,not_requested
+HS027,WSC008,Liron Katz,Sports Data Analyst,Data,1,,0,,C,not_requested
+HS029,WSC004,Avi Goldberg,Data Engineer,Data,2,,0,,C,not_requested
+HS029,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS031,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS031,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS033,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS033,WSC014,Michal Barak,Backend Engineer,Engineering,2,KINEXON Sports,3,2018-2021,A,not_requested
+HS035,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,0,,C,not_requested
+HS035,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,0,,C,not_requested
+HS037,WSC003,Noa Shapiro,Senior Product Manager,Product,3,,0,,B,not_requested
+HS037,WSC011,Eran Moshe,CTO,Leadership,3,,0,,B,not_requested
+HS037,WSC012,Dana Friedman,Sales Engineer,Sales,3,Deltatre,3,2019-2022,A,not_requested
+HS039,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS039,WSC004,Avi Goldberg,Data Engineer,Data,2,,0,,C,not_requested
+HS040,WSC004,Avi Goldberg,Data Engineer,Data,3,Nielsen Sports,3,2019-2022,A,not_requested
+HS040,WSC008,Liron Katz,Sports Data Analyst,Data,3,Nielsen Sports,0,,C,not_requested
+HS040,WSC013,Itai Nahum,ML Research Engineer,AI/ML,3,,0,,B,not_requested
+HS042,WSC004,Avi Goldberg,Data Engineer,Data,2,,0,,C,not_requested
+HS042,WSC008,Liron Katz,Sports Data Analyst,Data,2,,0,,C,not_requested
+HS044,WSC002,Maya Levi,Senior ML Engineer,AI/ML,1,,0,,C,not_requested
+HS046,WSC008,Liron Katz,Sports Data Analyst,Data,2,Opta,3,2018-2021,A,not_requested
+HS046,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,Opta,3,2018-2021,A,not_requested
+HS048,WSC008,Liron Katz,Sports Data Analyst,Data,1,,0,,C,not_requested
+HS050,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS050,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS051,WSC011,Eran Moshe,CTO,Leadership,1,,0,,C,not_requested
+HS053,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,0,,C,not_requested
+HS055,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS055,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS057,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS057,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS059,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS059,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS061,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS061,WSC011,Eran Moshe,CTO,Leadership,2,,0,,C,not_requested
+HS062,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,0,,C,not_requested
+HS064,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS064,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS066,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS066,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,0,,C,not_requested
+HS068,WSC002,Maya Levi,Senior ML Engineer,AI/ML,2,,0,,C,not_requested
+HS068,WSC013,Itai Nahum,ML Research Engineer,AI/ML,2,,0,,C,not_requested
+HS069,WSC009,Yuval Stern,DevOps Engineer,Engineering,1,,0,,C,not_requested
+HS070,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS070,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,,0,,C,not_requested
+HS072,WSC001,David Cohen,VP Engineering,Engineering,2,,0,,C,not_requested
+HS072,WSC006,Tal Mizrahi,Backend Engineer,Engineering,2,,0,,C,not_requested
+HS074,WSC003,Noa Shapiro,Senior Product Manager,Product,2,,0,,C,not_requested
+HS074,WSC012,Dana Friedman,Sales Engineer,Sales,2,,0,,C,not_requested
+HS075,WSC001,David Cohen,VP Engineering,Engineering,2,Akamai Media,3,2017-2020,A,not_requested
+HS075,WSC009,Yuval Stern,DevOps Engineer,Engineering,2,Akamai Media,3,2017-2020,A,not_requested

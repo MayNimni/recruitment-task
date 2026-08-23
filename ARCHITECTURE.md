@@ -331,5 +331,12 @@ matching is on the order of tens per event, decaying as the dictionary saturates
 | pool directory empty or missing | non-zero exit naming the `ingest` command | B2 |
 | unknown `job_id` | non-zero exit listing valid ids | B1 |
 
-In the supplied data all 75 attendees match a profile, so the `unverified` path is implemented and
-unit-testable but not exercised by the provided files.
+In the supplied data all 75 attendees match a profile, so the `unverified` path — and five of the
+other seven rows in this table (`wsc_mutual_connections` empty, no edges at all, skill absent from
+the alias table, note absent, edge marked `insufficient`) — is implemented and unit-testable but not
+exercised by the provided files. `data/edge_cases/` is a synthetic fixture built specifically to
+exercise all six; run it against JOB001 with `python pipeline/main.py match --job JOB001 --data-dir
+data/edge_cases` (output committed at `output/edge_cases/`) and see `README.md`'s Edge case handling
+section and `DECISIONS.md` §2.3 for the row-by-row proof. The remaining two rows (`pool` directory
+empty/missing, unknown `job_id`) are CLI-argument failures rather than data shapes, and stay outside
+this fixture's scope.

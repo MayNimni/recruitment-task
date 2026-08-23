@@ -1,0 +1,14 @@
+hubspot_id,full_name,email,company,title,conference_name,conference_domain,conference_date,source,notes,linkedin_url
+EC001,Testcase Unverified,testcase.unverified@edgecase.test,Fixture Testco,Senior ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,Computer vision work for sports video analysis,
+EC002,Edge Nomatch,edge.nomatch@edgecase.test,Fixture Testco,Junior Marketing Associate,Edge Case Fixture Event,DevOps,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/nomatch-nobody-edge
+EC003,Edge Emptyskills,edge.emptyskills@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-emptyskills
+EC004,Edge Nonote,edge.nonote@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-nonote
+EC005,Edge Isolated,edge.isolated@edgecase.test,Fixture Testco,Data Analyst,Edge Case Fixture Event,Data Analytics,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-isolated
+EC006,Edge Brokendate,edge.brokendate@edgecase.test,Fixture Testco,Backend Engineer,Edge Case Fixture Event,Sports Technology,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-brokendate
+EC007,Edge Opentenure,edge.opentenure@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Sports Technology,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-opentenure
+EC008,Edge Retired,edge.retired@edgecase.test,Fixture Testco,Senior ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-retired
+EC009,Edge Fewmutual,edge.fewmutual@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Sports Technology,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-fewmutual
+EC010,Edge Blankyears,edge.blankyears@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-blankyears
+EC011,Edge Passthroughskill,edge.passthroughskill@edgecase.test,Fixture Testco,ML Engineer,Edge Case Fixture Event,Computer Vision,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-passthroughskill
+EC012,Edge Nofamily,edge.nofamily@edgecase.test,Fixture Testco,Executive Assistant,Edge Case Fixture Event,Operations,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-nofamily
+EC013,Edge Nooverlap,edge.nooverlap@edgecase.test,Fixture Testco,IT Support Specialist,Edge Case Fixture Event,Sports Technology,2025-06-01,Fixture - Manual Entry,,linkedin.com/in/edge-nooverlap

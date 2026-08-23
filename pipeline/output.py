@@ -1,11 +1,16 @@
 """Flow B steps 5-8: referral selection, rationale/probe templates, and the
 two output writers. output.py must not import score.py or enrich.py
 (ARCHITECTURE.md §7) — everything it needs arrives as plain data from main.py.
+apply_llm_briefs is the one exception: it imports llm.py, the standalone B7
+model seam, lazily and only when called (main.py's `match --llm` path) — llm.py
+is not a Flow A/B step owner, just an isolated model-call boundary, so it is
+not a "peer" in the §7 sense.
 """
 
 import json
 import math
 import re
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -34,7 +39,7 @@ MATCHES_COLUMNS = [
     "value_conference", "points_skills", "points_title", "points_experience",
     "points_industry", "points_notes", "points_past", "points_conference",
     "skills_matched", "skills_semantic", "skills_missing", "rationale",
-    "interview_probes", "referral_name", "referral_title",
+    "interview_probes", "ai_summary", "ai_probes", "referral_name", "referral_title",
     "referral_department", "referral_tier", "referral_why",
     "referral_feedback", "flagged_on_site", "unverified", "ats_status",
     "conference_name", "conference_date",
@@ -70,10 +75,17 @@ def select_referral(edges: list, job_department: str) -> list:
 
 
 def referral_why(edge: dict) -> str:
-    """'both worked at X' for tiers A and C (both carry a shared employer),
-    'N mutual connections' otherwise."""
-    if edge.get("shared_employer"):
-        return f"both worked at {edge['shared_employer']}"
+    """'worked together at X, YYYY-YYYY' when the matched company's tenures
+    actually overlap (overlap_years > 0), 'both worked at X, no overlapping
+    years' for a shared employer whose tenures never coincided, 'N mutual
+    connections' otherwise. "worked together" is unreachable when
+    overlap_years is 0 — it can only be reported once dates confirm it."""
+    shared = edge.get("shared_employer")
+    overlap_years = int(edge.get("overlap_years") or 0)
+    if shared and overlap_years > 0:
+        return f"worked together at {shared}, {edge.get('overlap_period', '')}"
+    if shared:
+        return f"both worked at {shared}, no overlapping years"
     n = int(edge["mutual_count"])
     return f"{n} mutual connection{'' if n == 1 else 's'}"
 
@@ -173,6 +185,8 @@ def build_match_row(job_row, pool_row: dict, requirements: dict, scored: dict, c
         "skills_missing": ";".join(missing),
         "rationale": rationale,
         "interview_probes": probes,
+        "ai_summary": "",
+        "ai_probes": "",
         "referral_name": top_edge["employee_name"] if top_edge else "",
         "referral_title": top_edge["employee_title"] if top_edge else "",
         "referral_department": top_edge["employee_department"] if top_edge else "",
@@ -196,6 +210,97 @@ def build_match_row(job_row, pool_row: dict, requirements: dict, scored: dict, c
     return row
 
 
+def _build_job_summary(requirements: dict) -> dict:
+    """The THE ROLE side of the B7 prompt (llm.py) — the six fields named in the
+    model spec, already sitting on `requirements` from score.parse_job (B1).
+    """
+    return {
+        "title": requirements["job_title"],
+        "department": requirements["department"],
+        "seniority": requirements["seniority"],
+        "key_domains": requirements["key_domains"],
+        "required_skills": requirements["required_skills"],
+        "nice_to_have": requirements["nice_to_have"],
+    }
+
+
+def _build_candidate_record(pool_row: dict, requirements: dict, values: dict) -> dict:
+    """The THE CANDIDATE side of the B7 prompt. Reuses '_skills_lists' (set by
+    main.py before scoring) and this row's already-rounded component values —
+    no scoring logic is re-derived here, only reshaped for the model. note_meaning
+    translates score_notes' domain-overlap check (SPEC.md §B3) into words, since
+    the raw 0/0.5/1.0 is already in component_values and wouldn't tell the model
+    anything score_notes' number doesn't.
+    """
+    matched, semantic, missing = pool_row["_skills_lists"]
+    flagged = pool_row.get("flagged_on_site", False)
+
+    note_meaning = None
+    if flagged:
+        tags = set(pool_row.get("note_tags") or [])
+        note_meaning = (
+            "matches this role's domain" if tags & requirements["domain_vocabulary"]
+            else "no overlap with this role's domain"
+        )
+
+    years = pool_row.get("years_experience")
+    years_out = None if years is None or (isinstance(years, float) and math.isnan(years)) else years
+
+    return {
+        "current_title": pool_row.get("current_title") or pool_row.get("title") or "",
+        "current_company": pool_row.get("current_company") or pool_row.get("company") or "",
+        "years_experience": years_out,
+        "location": pool_row.get("location") or "",
+        "industry": pool_row.get("industry") or "",
+        "past_companies": pool_row.get("past_companies") or [],
+        "past_titles": pool_row.get("past_titles") or [],
+        "on_site_note": pool_row.get("note_raw") if flagged else None,
+        "note_meaning": note_meaning,
+        "unverified": pool_row.get("unverified", False),
+        "component_values": {
+            name: _round_or_none(values[name])
+            for name in ("skills", "title", "experience", "industry", "notes", "past", "conference")
+        },
+        "skills_matched": matched,
+        "skills_matched_by_meaning": [f"{raw} -> {canonical}" for raw, canonical in semantic],
+        "skills_missing": missing,
+    }
+
+
+def apply_llm_briefs(match_rows: list, pool_rows_by_id: dict, requirements: dict,
+                      llm_client, shortlist_size: int = 20) -> list:
+    """B7 model seam, live path. Runs after score.rank has already produced
+    match_rows in final sort order — the top `shortlist_size` rows each get one
+    llm.call_candidate_brief call; the rest keep the "" ai_summary/ai_probes
+    build_match_row set. Never touches match_score, value_*, points_*, or row
+    order — it only fills two columns build_match_row already reserved, and it
+    mutates match_rows in place (mirroring score.rank's own convention) as well
+    as returning it.
+
+    Called only when main.py was invoked with `match --llm`; without that flag
+    this function is never reached and the two columns stay empty (README.md /
+    ARCHITECTURE.md §8: no model call without an explicit opt-in).
+    """
+    import llm
+
+    job_summary = _build_job_summary(requirements)
+
+    for row in match_rows[:shortlist_size]:
+        pool_row = pool_rows_by_id[row["hubspot_id"]]
+        candidate = _build_candidate_record(pool_row, requirements, row["_values"])
+        # note_meaning costs no extra call — it's already computed above to build
+        # the prompt. Stashed here (dropped before the CSV write, like _values/
+        # _ordered_edges) so the recruiter view can show it without guessing
+        # which is the human's note and which is the system's read on it.
+        row["_note_meaning"] = candidate["note_meaning"]
+        brief = llm.call_candidate_brief(llm_client, job_summary, candidate)
+        if brief is not None:
+            row["ai_summary"] = brief["ai_summary"]
+            row["ai_probes"] = brief["ai_probes"]
+
+    return match_rows
+
+
 def write_matches_csv(rows: list, output_dir) -> Path:
     """B6. output/{job_id}_matches.csv."""
     output_dir = Path(output_dir)
@@ -208,6 +313,49 @@ def write_matches_csv(rows: list, output_dir) -> Path:
     return path
 
 
+def _build_shortlist_payload(match_rows: list, pool_rows_by_id: dict, shortlist_size: int) -> list:
+    """THE SHORTLIST side of the B7 job-summary prompt: title, company, years,
+    industry, matched/missing skills and score for the top `shortlist_size` rows
+    — nothing else, per the model-version spec. Reuses '_skills_lists' like
+    _build_candidate_record does; no scoring logic re-derived here.
+    """
+    items = []
+    for row in match_rows[:shortlist_size]:
+        pool_row = pool_rows_by_id[row["hubspot_id"]]
+        matched, _semantic, missing = pool_row["_skills_lists"]
+        years = pool_row.get("years_experience")
+        years_out = None if years is None or (isinstance(years, float) and math.isnan(years)) else years
+        items.append({
+            "title": pool_row.get("current_title") or pool_row.get("title") or "",
+            "company": pool_row.get("current_company") or pool_row.get("company") or "",
+            "years": years_out,
+            "industry": pool_row.get("industry") or "",
+            "matched": matched,
+            "missing": missing,
+            "score": row["match_score"],
+        })
+    return items
+
+
+def apply_llm_job_summary(match_rows: list, pool_rows_by_id: dict, requirements: dict,
+                           llm_client, shortlist_size: int = 20):
+    """B7 model seam, shortlist-summary variant. One call for the whole job
+    (not per candidate): the top `shortlist_size` rows against the job
+    requirements, asking the model to characterise the shortlist as a group.
+    Mirrors call_candidate_brief's contract — returns the summary string on a
+    well-formed response, None on any failure. There is no deterministic
+    fallback for this line (unlike rationale/interview_probes): None here
+    means main.py leaves summary_line = "" and write_recruiter_view renders no
+    summary line at all — a counted-tiles-read-aloud sentence was judged worse
+    than no sentence.
+    """
+    import llm
+
+    job_summary = _build_job_summary(requirements)
+    shortlist = _build_shortlist_payload(match_rows, pool_rows_by_id, shortlist_size)
+    return llm.call_shortlist_summary(llm_client, job_summary, shortlist)
+
+
 def _html_escape(text: str) -> str:
     return (
         str(text)
@@ -215,6 +363,19 @@ def _html_escape(text: str) -> str:
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
+
+
+def _format_conference_date(date_str) -> str:
+    """conference_date is stored 'YYYY-MM-DD' (SPEC.md §A8). The recruiter view
+    only ever needs to attribute a quote to a month, so format it once here
+    rather than shipping a raw ISO date (or a date-parsing helper) to the browser.
+    """
+    if not date_str:
+        return ""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%b %Y")
+    except ValueError:
+        return date_str
 
 
 def _edge_to_json(edge: dict) -> dict:
@@ -225,6 +386,7 @@ def _edge_to_json(edge: dict) -> dict:
         "tier": edge["tier"],
         "shared": edge["shared_employer"] or None,
         "n": int(edge["mutual_count"]),
+        "why": referral_why(edge),
     }
 
 
@@ -237,15 +399,25 @@ def _row_to_data_item(row: dict, pool_row: dict) -> dict:
     years = pool_row.get("years_experience")
     years_json = None if years is None or (isinstance(years, float) and math.isnan(years)) else int(years)
 
+    ai_summary = row.get("ai_summary") or ""
+    ai_probes = row.get("ai_probes") or ""
+
     return {
         "n": pool_row["full_name"],
+        # Provenance (model vs. template) lives in the CSV's ai_summary column
+        # for a reviewer to audit, not on the card — so no "src" field ships
+        # to the browser here.
+        "why": ai_summary or row.get("rationale", ""),
+        "probe": ai_probes or row.get("interview_probes", ""),
         "t": pool_row.get("current_title") or pool_row.get("title") or "",
         "c": pool_row.get("current_company") or pool_row.get("company") or "",
         "y": years_json,
         "l": pool_row.get("location") or "",
         "id": pool_row["hubspot_id"],
         "conf": pool_row.get("conference_name") or "",
+        "cd": _format_conference_date(pool_row.get("conference_date")),
         "notes": pool_row.get("note_raw") if pool_row.get("flagged_on_site") else None,
+        "meaning": row.get("_note_meaning"),
         "v": {name: (_round_or_none(row["_values"][name]) if row["_values"][name] is not None else 0.0)
               for name in ("skills", "title", "experience", "industry", "notes", "past", "conference")},
         "score": row["match_score"],
@@ -268,12 +440,12 @@ def build_data_items(match_rows: list, pool_rows_by_id: dict) -> list:
 
 
 def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_count: int,
-                          weights: dict, template_path, output_dir) -> Path:
+                          weights: dict, template_path, output_dir, summary_line: str = "") -> Path:
     """B6. Copies recruiter_view.html (the approved template), replacing the
-    DATA array, DEF weights object, and header title/subtitle, plus one
-    generated-copy-only JS patch described below. The template file at the
-    repo root is only ever read, never written — every change happens on the
-    in-memory `text` that becomes the file under output/.
+    DATA array, DEF weights object, SUMMARY line, and header title/subtitle,
+    plus one generated-copy-only JS patch described below. The template file at
+    the repo root is only ever read, never written — every change happens on
+    the in-memory `text` that becomes the file under output/.
 
     The JS patch: each DATA item now also carries `score`, the pipeline's
     already-rounded match_score (round_half_up, SPEC.md §B4) — the same
@@ -291,6 +463,7 @@ def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_c
 
     data_json = json.dumps(data_items, ensure_ascii=False, allow_nan=False)
     def_json = json.dumps(weights, ensure_ascii=False)
+    summary_json = json.dumps(summary_line, ensure_ascii=False)
 
     lines = text.splitlines(keepends=True)
     for i, line in enumerate(lines):
@@ -299,6 +472,8 @@ def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_c
             lines[i] = f"const DATA = {data_json};\n"
         elif stripped.startswith("const DEF ="):
             lines[i] = f"const DEF = {def_json};\n"
+        elif stripped.startswith("const SUMMARY ="):
+            lines[i] = f"const SUMMARY = {summary_json};\n"
     text = "".join(lines)
 
     original_score_fn = (
@@ -336,6 +511,23 @@ def write_recruiter_view(data_items: list, job_row, pool_size: int, conference_c
             "generated-copy patch in output.write_recruiter_view to match"
         )
     text = text.replace(original_slider_handler, patched_slider_handler, 1)
+
+    # refHtml() recomputes "why" client-side from r.shared/r.n, duplicating
+    # the old shared-employer-or-mutual-count logic in JS. That would go
+    # stale against referral_why()'s tier/overlap-aware text now on every
+    # edge as r.why, so the screen would contradict the CSV (SPEC.md §4).
+    # Patched to read the same string Python already computed.
+    original_why = (
+        "  const why = r.shared ? `both worked at ${esc(r.shared)}`\n"
+        "    : `${r.n} mutual connection${r.n === 1 ? '' : 's'}`;\n"
+    )
+    patched_why = "  const why = esc(r.why);\n"
+    if original_why not in text:
+        raise ValueError(
+            "recruiter_view.html's refHtml() why computation has changed — update the "
+            "generated-copy patch in output.write_recruiter_view to match"
+        )
+    text = text.replace(original_why, patched_why, 1)
 
     job_title = job_row["title"]
     subtitle = (
