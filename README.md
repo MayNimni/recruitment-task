@@ -3,6 +3,14 @@
 Captures conference attendees as talent leads, enriches them with LinkedIn data once, and surfaces
 the right candidates when a role opens.
 
+**In plain language.** Every month the team fills a room with exactly the engineers it wants to
+hire, and within days those contacts are gone. This turns each event into a permanent, searchable
+talent pool: every attendee is enriched once and stored, and when a role opens the pool is ranked
+against it in seconds — with the skills each person has, the ones they're missing, and the name of
+the colleague who already knows them. Every score opens up to show how it was calculated, so a
+shortlist can be defended to a hiring manager rather than trusted blindly.
+[Longer version for a non-technical reader →](DESIGN.md#for-a-non-technical-reader)
+
 **Two flows.** *Flow A — ingestion* runs once after each conference and writes a talent pool.
 *Flow B — matching* runs when a role opens and ranks that pool against it. They share no state; the
 pool on disk is the only interface.
@@ -22,6 +30,11 @@ seven components, and the colleague best placed to make an introduction.
 
 Same thing offline: clone the repo and double-click `index.html` at the root. No server, no API key,
 no install — every report is committed, so it works on a fresh clone before you run anything.
+
+![Recruiter view for JOB001 — ranked shortlist with weight sliders, skill chips and referral paths](docs/images/recruiter_view.png)
+
+*`output/JOB001_recruiter_view.html`, rendered from the committed run. Every number on it is a
+column in `output/JOB001_matches.csv`.*
 
 ## Setup
 
@@ -129,12 +142,13 @@ index.html          landing page — start here
 DESIGN.md           the design document
 data/               supplied CSVs + config, and the edge-case fixture
 pipeline/           ingest · enrich · score · output · main
+tests/              the acceptance checks — python3 -m unittest discover tests
 pool/               Flow A output
 output/             Flow B output, one CSV + one HTML per role
-docs/reference/     full architecture, implementation contract, decision log
+docs/reference/     implementation contract (SPEC) + alias generation log
 ```
 
 [`docs/reference/`](docs/reference/) holds the long-form material `DESIGN.md` summarizes:
 [`SPEC.md`](docs/reference/SPEC.md) (system shape, flow diagrams, exact scoring rules, column
-contracts, data model, failure modes) and [`DECISIONS.md`](docs/reference/DECISIONS.md) (the full
-reasoning behind every choice). Neither is required reading.
+contracts, data model, failure modes). The reasoning behind every choice lives in
+[`DESIGN.md`](DESIGN.md). Neither is required reading.
