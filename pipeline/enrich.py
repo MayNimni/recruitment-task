@@ -103,7 +103,7 @@ def join_profiles(attendees: pd.DataFrame, profiles: pd.DataFrame) -> pd.DataFra
     """A2. Left join attendees to profiles on normalized linkedin_url.
 
     A row with no match is kept: unverified=True and every profile-derived
-    column is ''. No name-based fallback (docs/reference/DECISIONS.md §2.2).
+    column is ''. No name-based fallback (DESIGN.md §2, "On data quality").
     """
     left = attendees.copy()
     right = profiles.copy()
@@ -173,7 +173,7 @@ def extract_note_tags(note, aliases: dict):
     tokens plus their canonical forms via the alias table.
 
     Same seam pattern as resolve_unknown_alias: in production this extractor
-    is replaced by a model returning structured signal tags (docs/reference/DECISIONS.md §6.1
+    is replaced by a model returning structured signal tags (DESIGN.md §1
     / docs/reference/SPEC.md §9). Note *value* is not computed here — that is B3.
     """
     note = "" if note is None else str(note)
@@ -293,7 +293,7 @@ def company_tokens(entry: str, generic_tokens=GENERIC_COMPANY_TOKENS_STEMMED) ->
     >= 4. Shared by both sides of the A6 comparison. Whole-token equality
     only — never substring matching, which is what would incorrectly pair a
     candidate from Intel with an employee from an IDF Intelligence Unit
-    (docs/reference/SPEC.md §A6, docs/reference/DECISIONS.md §2.3).
+    (docs/reference/SPEC.md §A6).
     """
     text = re.sub(r"\([^)]*\)", "", entry).lower()
     tokens = set()
@@ -369,7 +369,7 @@ def assign_tier(edge: dict):
     Overlap can only be nonzero when shared_employer is set (docs/reference/SPEC.md §A6 —
     it's derived from the matched company's dates), so "overlap without a
     shared employer" is not a case that needs handling. Every edge that
-    exists carries exactly one of these four tiers (docs/reference/DECISIONS.md §2.3) — an
+    exists carries exactly one of these four tiers (docs/reference/SPEC.md §A7) — an
     edge that matches none of them is a bug upstream, so this raises rather
     than silently returning an empty tier.
     """

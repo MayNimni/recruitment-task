@@ -299,7 +299,7 @@ def score_components(pool_row: dict, requirements: dict):
     """B3 + B4-normalize. Computes all seven components, unless the candidate
     is unverified, in which case only title/notes/conference are computed
     (docs/reference/SPEC.md §B3) and the rest are None — never 0, which would read as poor
-    fit rather than unknown (docs/reference/DECISIONS.md §2.2/§4.2).
+    fit rather than unknown (DESIGN.md §2, assumption 2).
 
     Returns (values: dict[str, float|None], score_basis: list[str]).
     """

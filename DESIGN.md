@@ -4,7 +4,8 @@ Conference-attendee talent pool: capture attendees as leads, enrich them once, a
 against an open role on demand.
 
 Deeper material — full architecture, exact scoring rules, column contracts, failure modes — is in
-[`docs/reference/`](docs/reference/).
+[`docs/reference/`](docs/reference/). For the version with no jargon in it, skip to
+[**For a non-technical reader**](#for-a-non-technical-reader).
 
 ---
 
@@ -51,6 +52,19 @@ out before being scored.
 | Past companies | 5 | 1.0 sports; 0.5 media or video; 0 otherwise |
 | Conference domain | 2 | 1.0 if the event domain overlaps the role's domains; 0 otherwise |
 
+**Three of these weights are set by a named counter-example in the supplied data.** Chiara Russo
+attended a broadcast expo rather than a sports or ML event, yet she is a senior ML engineer building
+automated sports clipping in PyTorch — a conference tells you where somebody was on a Tuesday, not
+what they do, so it is worth 2. Yuki Tanaka carries the maximum sports signal in the dataset — NBA,
+previously Sportradar and Nielsen Sports — but works in Spark, dbt and Airflow, with no PyTorch and
+no computer vision; he lands mid-pack for JOB001 and near the top for JOB004, which is the intended
+behaviour and why industry is capped at 13. And 41 of the 75 attendees carry a field note, clustering
+on strong candidates — a human at the event was discriminating well. But an absent note means nobody
+got to that person, not that the person is irrelevant, so weighting notes heavily would score *how
+busy the booth was* rather than candidate quality. Ten points separates equals without punishing the
+unspoken-to, and `flagged_on_site` carries the human signal independently of the number. If on-site
+staff recorded a structured judgment instead of free prose, that weight could justifiably rise.
+
 **Separating the value from the weight is the whole design.** The component states a fact — four of
 five required skills is `0.80`. The weight states a judgment — what that fact is worth for this role.
 Keeping them apart is what lets the recruiter view expose the weights as **live sliders**, makes each
@@ -63,7 +77,10 @@ history. They encode a stated ordering: skills and title dominate because they d
 **Why nothing is filtered.** A sports-tech conference draws practitioners *and* an IT manager from a
 hospital. The tempting fix is to filter on title, and it is wrong: filtering on title would have
 removed Priya Anand — whose title contains no "ML" — before her skills were read, and she is one of
-the strongest candidates for JOB001. Signal-to-noise is solved by *ranking*: the hospital IT manager
+the strongest candidates for JOB001. Her listed skills name neither required skill outright: under
+exact matching she clears 2 of 5. But YOLO *is* an object-detection model and OpenCV *is* a
+computer-vision library, so alias-resolved matching puts her at 4 of 5 — roughly 12 points, and the
+distance between mid-pack and top-tier. Signal-to-noise is solved by *ranking*: the hospital IT manager
 scores 0 on skills, title, industry and notes, and lands 55th of 75.
 
 ### Where a model earns its cost
@@ -77,6 +94,14 @@ defend to a hiring manager. That rules out RAG and vector search too: there is n
 here, and approximate retrieval would replace an exact comparison with a score that has no reason
 attached.
 
+**The same reasoning rejects an autonomous agent.** The framing is fair as a *description* of this
+system — Flow A as an ingestion agent, Flow B as a matching agent — and each stage is already
+isolated enough to be lifted into a service. But handing the **scoring** to an agent would be a
+regression: the same candidate may score 79 or 81 across runs, at added latency and per-candidate
+cost, in exchange for an explanation the deterministic version already produces exactly. The brief
+requires a recruiter to be able to say "she matches 4 of 5 required skills, missing PyTorch" — not
+"the system said 80%".
+
 Free text exists in exactly four places, and each is a documented seam:
 
 | Touchpoint | This submission | In production |
@@ -85,6 +110,9 @@ Free text exists in exactly four places, and each is a documented seam:
 | On-site field notes | token extraction against a vocabulary | model returns structured signal tags |
 | Job descriptions | parsed from three CSV columns | model parses a prose role description |
 | Rationale and probes | template over component values | model infers what to ask on the call |
+
+Worth stating rather than hiding: three of the four are neutralized here *because the task supplied
+data that was already structured*. In a real deployment they carry real work.
 
 **No model runs on the default path**, so this repo needs no API key and the same candidate scores
 the same number on every run. A shortlist that shifts between executions cannot be defended.
@@ -103,6 +131,16 @@ the person. Both sides of the data carry dates — the roster's `work_history` a
 `past_titles` — so a shared employer becomes checkable: two people who **actually overlapped**, not
 merely both drew a paycheck there.
 
+**The distribution is the empirical half of the argument.** Of the 75 attendees, **33 have no mutual
+connection, 37 have one or two, and only 5 reach three** — a signal with half the population in a
+single bucket cannot carry scoring weight. Shared employers are rarer and sharper: token-bounded
+matching against dated `past_titles` finds **20 candidate-employee pairs across 12 candidates**, and
+**16 of the 20** have tenures that genuinely overlap. One of the remaining four is a dirty-data case
+— a malformed date range that still matches on company name but yields no parseable dates, so it is
+treated as "no overlap" rather than guessed at. **32 of the 75 have no edge at all**; they are still
+scored and ranked, and the view shows *No referral path*. Missing a referral is not a mark against a
+candidate.
+
 | Tier | Condition | Pairs |
 | :--- | :---- | ---: |
 | **A** | shared employer + confirmed overlap + a mutual connection | 12 |
@@ -110,8 +148,20 @@ merely both drew a paycheck there.
 | **C** | 1–2 mutual connections, or a shared employer backed by only one of {overlap, mutual} | 60 |
 | **D** | shared employer, no overlap, no mutual connection | 2 |
 
-The recruiter-facing string never overstates: `worked together at Opta Sports, 2019-2021` when the
-dates confirm it, `both worked at IDF Intelligence Unit, no overlapping years` when they don't.
+The recruiter-facing string never overstates. Every string the view can render, and the row that
+produces it:
+
+| Condition | String shown | Fires on |
+| :---- | :---- | :---- |
+| Shared employer, tenures overlap | `worked together at Opta Sports, 2019-2021` | HS013 Marcus Reid |
+| Shared employer, no overlap | `both worked at IDF Intelligence Unit, no overlapping years` | HS026 Grace Wilson |
+| 3+ mutual connections | `3 mutual connections` | HS025 Lucas Evans |
+| 1–2 mutual connections | `2 mutual connections` / `1 mutual connection` | HS068 Chiara Russo / HS044 Sara Lindqvist |
+| No edge at all | `No referral path` | HS041 Viktor Novak |
+| Best edge retired | falls through to the next-best edge | `data/edge_cases` EC008 |
+
+The last row is not producible from the supplied CSVs — no `insufficient` value exists in them to
+select against — which is one of the reasons the fixture exists.
 
 **A tier is an estimate from data; the truth comes from asking.** Each edge therefore carries a
 feedback state, and the adjustment sits **on top of** the match score rather than inside it —
@@ -150,6 +200,18 @@ token-bounded rather than substring-based, because naive matching pairs a candid
 an employee from an `IDF Intelligence Unit`. A malformed tenure date is treated as "no overlap"
 rather than guessed at.
 
+**There is deliberately no name-based fallback.** Joining on name where `linkedin_url` fails would
+raise coverage and lower trust. Common names produce false matches, and attaching the wrong LinkedIn
+profile to a candidate is worse than attaching none — it puts fabricated skills and experience into a
+shortlist a recruiter will act on. The registration email remains a valid outreach path regardless.
+
+**Correct arithmetic is not the same as an honest screen.** An unverified row normalized over 37 can
+reach 100, and in the fixture it does, ranking #1 of 13. The number is right; the *display* was not. A
+bare `100` beside a name, with four uncomputed components rendered as red "missing" chips, told a
+recruiter the opposite of the truth — that the person had been assessed and found wanting. The
+`Unverified` badge, the `out of 37, not 100` label and the suppressed gap chips
+([`SPEC.md`](docs/reference/SPEC.md) §7) exist to close that gap.
+
 **On scope.** `ats_status` and `referral_feedback` are emitted and unpopulated — the fields are
 defined, the data is not available here.
 
@@ -187,6 +249,18 @@ constraints the design already absorbs: it is rate limited, so enrichment is bat
 rather than synchronous; coverage is partial, so unmatched contacts are flagged `unverified` rather
 than dropped; and it costs per lookup, so enrichment runs **once per person in Flow A** and never per
 query in Flow B.
+
+**Connection data is not part of it.** A provider sells public profile data; nobody legally sells a
+private connection graph. Mutual connections require **per-employee consent** either way — a
+Recruiter seat with TeamLink, or a voluntary connection export — so the design treats them as a
+consent-gated bonus, **not a dependency**: Flow A's shared-employer step (A6 — comparing the HR
+roster's `work_history` against the candidate's `past_titles` to find a common employer and a
+confirmed overlap in years) builds edges with no connection data at all. It reaches 12 of the 75
+supplied attendees, one of whom has no mutual connection anywhere and would otherwise have no path
+at all. The cost is worth stating plainly rather than softening: strip connection data and tiers A
+and B go silent, leaving only those 12 with any referral edge. That is a degradation of the referral
+layer, not a failure of the system — the ranking itself never depended on it. This is the second
+consent in the design — assumption 7 covers the registrant's; this one is the employee's.
 
 **On HubSpot.** Talent-pool fields map onto contact properties, so the pool *extends* contact records
 rather than creating a parallel database. HubSpot stays the system of record for the contact;
