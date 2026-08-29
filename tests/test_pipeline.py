@@ -456,6 +456,69 @@ class TestRelevanceInTheCommittedPool(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
+# ATS history — read-only, visible, and never a term in the score
+# --------------------------------------------------------------------------
+
+class TestAtsStatus(unittest.TestCase):
+    def test_the_lookup_is_optional_and_absent_under_the_real_data(self):
+        self.assertEqual(ingest.load_ats_status(REPO_ROOT / "data"), {})
+        self.assertFalse((REPO_ROOT / "data" / "ats_status.csv").exists())
+
+    def test_the_fixture_supplies_a_prior_process(self):
+        history = ingest.load_ats_status(REPO_ROOT / "data" / "edge_cases")
+        self.assertIn("EC004", history)
+        self.assertEqual(history["EC004"]["ats_status"], "declined")
+        self.assertEqual(history["EC004"]["ats_last_activity"], "2024-06-18")
+
+    def test_an_attendee_with_no_history_gets_an_empty_column_not_a_guess(self):
+        with open(REPO_ROOT / "pool" / "talent_pool.csv", newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertTrue(all(row["ats_status"] == "" for row in rows),
+                        "the supplied data carries no candidate history")
+
+    def test_a_prior_candidate_is_flagged_and_still_scored(self):
+        """A rejection two years ago is context for the call, not a filter and
+        not a penalty — the brief's question 4."""
+        rows = {r["full_name"]: r for r in read_matches(subdir="edge_cases")}
+        declined = rows["Edge Nonote"]
+        self.assertEqual(declined["ats_status"], "declined")
+        self.assertEqual(declined["ats_last_activity"], "2024-06-18")
+        self.assertEqual(int(declined["match_score"]), 78)
+
+    def test_history_changes_no_score(self):
+        """The same candidate scores the same with and without an ATS record."""
+        requirements = TestUnverified().requirements()
+        base = {"unverified": False, "current_title": "ML Engineer", "note_tags": [],
+                "skills_canonical": ["Python"], "years_experience": 8.0,
+                "industry": "Sports", "past_companies": [], "conference_domain": "",
+                "note_raw": ""}
+        clean, _ = score.score_components(dict(base), requirements)
+        prior, _ = score.score_components(
+            dict(base, ats_status="declined", ats_last_activity="2024-06-18"), requirements)
+        self.assertEqual(clean, prior)
+
+    def test_the_view_states_the_filter_facts_about_its_own_rows(self):
+        """The two optional filters describe the file they are in. The fixture
+        view must not claim '75 attendees matched a profile' — it has 13 rows,
+        two of them unverified."""
+        fixture = (REPO_ROOT / "output" / "edge_cases" /
+                   "JOB001_recruiter_view.html").read_text(encoding="utf-8")
+        self.assertNotIn("All 75", fixture)
+
+        data = json.loads(re.search(r"const DATA = (\[.*?\]);\n", fixture, re.S).group(1))
+        self.assertEqual(sum(1 for c in data if c.get("ats")), 4)
+        self.assertEqual(sum(1 for c in data if c.get("u")), 2)
+
+        # A row with no history carries no `ats` key at all, rather than an empty one.
+        self.assertTrue(all("ats" not in c or c["ats"]["s"] for c in data))
+
+    def test_no_row_in_the_real_views_carries_an_ats_payload(self):
+        real = (REPO_ROOT / "output" / "JOB001_recruiter_view.html").read_text(encoding="utf-8")
+        data = json.loads(re.search(r"const DATA = (\[.*?\]);\n", real, re.S).group(1))
+        self.assertFalse(any("ats" in c for c in data))
+
+
+# --------------------------------------------------------------------------
 # Flow B — referral selection never overstates
 # --------------------------------------------------------------------------
 

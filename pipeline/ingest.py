@@ -20,6 +20,7 @@ TITLE_FAMILIES_FILE = "title_families.json"
 COMPANY_DOMAINS_FILE = "company_domains.json"
 CONFERENCE_DOMAINS_FILE = "conference_domains.json"
 REFERRAL_FEEDBACK_FILE = "referral_feedback.csv"
+ATS_STATUS_FILE = "ats_status.csv"
 
 
 def load_csv(data_dir: Path, filename: str) -> pd.DataFrame:
@@ -101,6 +102,32 @@ def load_referral_feedback(data_dir: Path) -> dict:
     }
 
 
+def load_ats_status(data_dir: Path) -> dict:
+    """A1, optional. Returns {hubspot_id: {'ats_status', 'ats_last_activity'}}
+    or {} if the file is absent.
+
+    The same shape of source as referral_feedback: a record the pipeline reads
+    and never derives. In production this is a **read-only** lookup against
+    Comeet — does a process exist for this person, what came of it, when — and
+    nothing here ever writes back. data/ ships without one, because the
+    supplied data carries no candidate history; data/edge_cases/ ships one so
+    the prior-candidate branch is produced by a run rather than described in
+    prose.
+    """
+    path = data_dir / ATS_STATUS_FILE
+    if not path.exists():
+        return {}
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    return {
+        row["hubspot_id"]: {
+            "ats_status": row["ats_status"].strip(),
+            "ats_last_activity": row.get("ats_last_activity", "").strip(),
+        }
+        for _, row in df.iterrows()
+        if row["ats_status"].strip()
+    }
+
+
 def load_sources(data_dir) -> dict:
     """A1. Returns the four source dataframes plus the four config dicts.
 
@@ -121,4 +148,5 @@ def load_sources(data_dir) -> dict:
         "company_domains": load_company_domains(data_dir),
         "conference_domains": load_conference_domains(data_dir),
         "referral_feedback": load_referral_feedback(data_dir),
+        "ats_status": load_ats_status(data_dir),
     }

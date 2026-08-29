@@ -128,10 +128,11 @@ and a reset button restores the defaults, so an exported CSV always means one fi
 
 ## Edge cases
 
-`data/edge_cases/` is a 13-row synthetic fixture exercising twelve branches the supplied data never
-reaches — no LinkedIn match, an empty skill list, no note, no referral path, an unparseable tenure
-date, a retired referral, a title in no known family, a conference domain with no vocabulary on
-file, and an attendee too thinly recorded to classify either way.
+`data/edge_cases/` is a 13-row synthetic fixture exercising thirteen branches the supplied data
+never reaches — no LinkedIn match, an empty skill list, no note, no referral path, an unparseable
+tenure date, a retired referral, a title in no known family, a conference domain with no vocabulary
+on file, an attendee too thinly recorded to classify either way, and four candidates with prior
+history in the ATS.
 
 ```bash
 python3 pipeline/main.py run --job JOB001 --data-dir data/edge_cases
@@ -139,6 +140,14 @@ python3 pipeline/main.py run --job JOB001 --data-dir data/edge_cases
 
 `--data-dir` namespaces the pool and output directories, so a fixture run can never overwrite the
 real one. Its output is committed at `output/edge_cases/`.
+
+Two of those branches need a source file the supplied data does not have, so the fixture ships one
+each: `referral_feedback.csv` retires a referral path, and `ats_status.csv` marks four attendees as
+prior candidates. Both are read, never derived — **an empty value means "nothing on file", not
+"nothing happened"** — and neither changes a score. In the fixture's recruiter view a prior
+candidate carries an amber badge naming the outcome and its date, and `Hide prior candidates`
+becomes a live filter; in the four real reports it stays disabled, because there is no history to
+filter.
 
 Notably, the unverified candidate ranks **#1 at a score of 100** — correct arithmetic, since an
 unverified row is normalized over the three computable weights (`25+10+2 = 37`). Because a thin

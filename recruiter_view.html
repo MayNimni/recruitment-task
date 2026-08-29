@@ -70,6 +70,11 @@
   .unver .tag { display:inline-block; font-size:11px; letter-spacing:.6px; text-transform:uppercase;
     color:var(--ring-warn); border:1px solid var(--ring-warn); border-radius:4px;
     padding:1px 5px; margin-right:7px; }
+  .ats { font-size:12.5px; line-height:1.5; color:var(--muted); background:var(--rail);
+    border-radius:7px; padding:9px 11px; margin:9px 0 2px; max-width:640px; }
+  .ats .tag { display:inline-block; font-size:11px; letter-spacing:.6px; text-transform:uppercase;
+    color:var(--ring-warn); border:1px solid var(--ring-warn); border-radius:4px;
+    padding:1px 5px; margin-right:7px; }
   .bd tr.off td { color:#a5a199; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
   .chip { font-size:12.5px; padding:3px 9px; border-radius:5px; }
@@ -185,10 +190,7 @@
         <div class="f-row"><input type="checkbox" id="f-ref"><label for="f-ref">Has a referral path</label></div>
         <div class="f-row"><input type="checkbox" id="f-shared"><label for="f-shared">Shared employer only</label></div>
         <div class="f-row"><input type="checkbox" id="f-notes"><label for="f-notes">Spoken to on site</label></div>
-        <div class="f-row off"><input type="checkbox" id="f-ats" disabled><label for="f-ats">Hide prior candidates</label></div>
-        <div class="f-note">Needs the ATS lookup. No candidate history in this dataset.</div>
-        <div class="f-row off"><input type="checkbox" id="f-unv" disabled><label for="f-unv">Hide unverified</label></div>
-        <div class="f-note">All 75 attendees matched a profile, so nothing is unverified here.</div>
+        <div id="f-optional"></div>
       </div>
     </aside>
     <main id="list"></main>
@@ -305,6 +307,14 @@ function card(c) {
     ${basis(c).reduce((a, k) => a + w[k], 0)} rather than 100, so missing data does not read as
     poor fit. Skills, experience, industry and past companies are unassessed, not absent.
   </div>` : '';
+  // A prior process is context for the call, never a verdict and never a term
+  // in the score: a candidate rejected for one role two years ago may be the
+  // right person for this one. Shown so a recruiter checks before reaching out.
+  const ats = c.ats ? `<div class="ats">
+    <span class="tag">${esc(ATS_LABELS[c.ats.s] || c.ats.s)}</span>
+    Already in the ATS${c.ats.d ? `, last activity ${esc(c.ats.d)}` : ''}. Check the history
+    before reaching out — the score above does not know about it.
+  </div>` : '';
   const note = c.notes ? `<div class="note">
     <div class="note-attr">Spoken to at ${esc(c.conf)}${c.cd ? ', ' + esc(c.cd) : ''}</div>
     <div class="note-quote">&ldquo;${esc(c.notes)}&rdquo;</div>
@@ -315,7 +325,7 @@ function card(c) {
       aria-label="Show how ${esc(c.n)} scored">${ring(v)}</button>
     <div><div class="nm">${esc(c.n)}</div>
       <div class="meta">${meta}</div>
-      ${unver}
+      ${unver}${ats}
       <div class="chips">${chips}</div>${note}</div>
     ${refHtml(c)}
     ${briefHtml(c)}
@@ -323,12 +333,43 @@ function card(c) {
   </article>`;
 }
 
+const ATS_LABELS = {
+  in_process: 'in process', declined: 'declined', hired: 'hired', withdrew: 'withdrew',
+};
+
+// The two optional filters describe this file's own DATA rather than the
+// dataset the template was written against: each is live with a count when
+// there is something to filter, and disabled with the reason when there is not.
+function optionalFilters() {
+  const priors = DATA.filter(c => c.ats).length;
+  const unver = DATA.filter(c => c.u).length;
+  const rows = [
+    ['f-ats', 'Hide prior candidates', priors,
+     `No candidate history on file for these ${DATA.length}. In production this is a read-only Comeet lookup.`],
+    ['f-unv', 'Hide unverified', unver,
+     `All ${DATA.length} matched a LinkedIn profile, so nothing here is unverified.`],
+  ];
+  document.getElementById('f-optional').innerHTML = rows.map(([id, label, n, absent]) => n
+    ? `<div class="f-row"><input type="checkbox" id="${id}"><label for="${id}">${label}</label></div>
+       <div class="f-note">${n} of ${DATA.length} in this list.</div>`
+    : `<div class="f-row off"><input type="checkbox" id="${id}" disabled><label for="${id}">${label}</label></div>
+       <div class="f-note">${absent}</div>`).join('');
+}
+
+const on = id => {
+  const el = document.getElementById(id);
+  return !!el && !el.disabled && el.checked;
+};
+
 function render() {
   const fRef = document.getElementById('f-ref').checked;
   const fSh = document.getElementById('f-shared').checked;
   const fNo = document.getElementById('f-notes').checked;
+  const fAts = on('f-ats');
+  const fUnv = on('f-unv');
   let list = DATA.filter(c => (!fRef || c.r.length) &&
-    (!fSh || c.r.some(r => r.shared)) && (!fNo || c.notes));
+    (!fSh || c.r.some(r => r.shared)) && (!fNo || c.notes) &&
+    (!fAts || !c.ats) && (!fUnv || !c.u));
   list = list.map(c => [score(c), c]).sort((a, b) => b[0] - a[0]).map(p => p[1]);
   document.getElementById('list').innerHTML = list.length
     ? list.map(card).join('')
@@ -353,7 +394,11 @@ KEYS.forEach(k => {
   const el = document.getElementById('w-' + k);
   el.oninput = () => { w[k] = +el.value; document.getElementById('o-' + k).textContent = el.value; render(); };
 });
-['f-ref', 'f-shared', 'f-notes'].forEach(id => document.getElementById(id).onchange = render);
+optionalFilters();
+['f-ref', 'f-shared', 'f-notes', 'f-ats', 'f-unv'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el && !el.disabled) { el.onchange = render; }
+});
 document.getElementById('reset').onclick = () => {
   w = {...DEF};
   KEYS.forEach(k => { document.getElementById('w-' + k).value = DEF[k];

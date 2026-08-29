@@ -245,7 +245,7 @@ yet — the field is the schema for it, not a claim that it runs.
 | 1 | **Defining domain relevance** | Two answers, because it is two questions. *Fit for a role*: a weighted, transparent score — never a filter; nobody is excluded before being scored and noise sinks in the ranking. *In-domain for the event they attended*: `conference_relevance` / `conference_class` / `conference_relevance_why`, computed at ingestion with no job involved, from title and skills for a discipline event and from skills and industry for a subject one. Neither one filters, and the second carries no weight in the first. |
 | 2 | **No LinkedIn profile match** | **Kept and flagged**, never dropped. Only three of seven components are computable (title, notes, conference), so the score is normalized over those weights — `25+10+2 = 37` — and the record carries `unverified`. Missing data must not read as poor fit. |
 | 3 | **1 mutual connection vs. 3** | Neither scores points. Both become *who to ask*, graded A–D by combining connections with confirmed tenure overlap. |
-| 4 | **Candidates already in the ATS** | Flagged via `ats_status`, populated in production by a **read-only** lookup returning whether a process exists, its outcome and date. Here the column exists and is empty. |
+| 4 | **Candidates already in the ATS** | **Flagged, never filtered and never penalised.** `ats_status` + `ats_last_activity` come from an optional source file — in production a **read-only** Comeet lookup returning whether a process exists, its outcome and when. The card carries an amber badge naming the outcome and a line saying the score does not know about it, and `Hide prior candidates` becomes a live filter. A rejection two years ago was a judgment about a different role; it belongs in front of the recruiter, not inside the number. The supplied data carries no history, so this runs under `data/edge_cases/`. |
 | 5 | **Refresh cadence** | Ingest after each conference (2–3×/month); match on demand; re-enrich profiles every 6–12 months; archive after 36 months without interaction. |
 | 6 | **Who triggers it** | Ingestion automatic on event close. Matching recruiter-initiated. **ATS handoff manual by design** — consent is the trigger and is not machine-detectable. |
 | 7 | **Privacy / GDPR** | A registrant consented to attend an event, not to join a candidate database. The pool therefore **lives outside the ATS**; the registration form carries a **soft opt-in**; every record stores its source event and capture date and honours deletion. LinkedIn's terms prohibit scraping, so production enrichment goes through a licensed provider. |
@@ -269,8 +269,12 @@ recruiter the opposite of the truth — that the person had been assessed and fo
 `Unverified` badge, the `out of 37, not 100` label and the suppressed gap chips
 ([`SPEC.md`](docs/reference/SPEC.md) §7) exist to close that gap.
 
-**On scope.** `ats_status` and `referral_feedback` are emitted and unpopulated — the fields are
-defined, the data is not available here.
+**On scope.** Two fields have no data under `data/` because the supplied files carry none:
+`referral_feedback` (nobody has been asked for a referral yet) and `ats_status` (no candidate
+history was exported). Both are read from optional source files rather than derived, both are
+populated under `data/edge_cases/`, and both therefore run as code rather than existing as
+documentation. **An empty value in either means "nothing on file", never "nothing happened"** —
+which is why no branch anywhere treats an empty one as a negative signal.
 
 ---
 

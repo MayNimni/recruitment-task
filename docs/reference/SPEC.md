@@ -43,7 +43,8 @@ data/
   skill_aliases.json          title_families.json      company_domains.json
   conference_domains.json     per-event domain vocabulary — A8
   edge_cases/                 the same eight files, synthetic, plus:
-    referral_feedback.csv     optional 8th source — seeds retired edges (§4)
+    referral_feedback.csv     optional source — seeds retired edges (§4)
+    ats_status.csv            optional source — seeds prior candidates (§4)
 pool/
   talent_pool.csv             referral_edges.csv                    written by Flow A
   edge_cases/                 fixture pool
@@ -106,6 +107,7 @@ python pipeline/main.py ingest --data-dir data/edge_cases   # any dir holding th
 | `data/company_domains.json` | config | — | B3 |
 | `data/conference_domains.json` | config | — | A8 |
 | `<data-dir>/referral_feedback.csv` | source, **optional** | recruiter (production: HubSpot). Absent under `data/`; present under `data/edge_cases/` | A7 |
+| `<data-dir>/ats_status.csv` | source, **optional** | the ATS (production: a read-only Comeet lookup). Absent under `data/`; present under `data/edge_cases/` | A9 |
 | `pool/talent_pool.csv` | state | A9 | B2 |
 | `pool/referral_edges.csv` | state | A9 | B2 |
 | `output/JOB00N_matches.csv` | artifact | B8 | index |
@@ -294,7 +296,8 @@ true at once.
 location, years_experience, industry, past_companies, past_titles, skills_raw, skills_canonical,
 skills_alias_hits, note_raw, note_tags, flagged_on_site, unverified, conference_name,
 conference_domain, conference_date, conference_relevance, conference_class,
-conference_relevance_why, source, first_seen_at, last_refreshed_at, ats_status, pool_status`
+conference_relevance_why, source, first_seen_at, last_refreshed_at, ats_status,
+ats_last_activity, pool_status`
 
 **`pool/referral_edges.csv`** — one row per candidate-employee pair, keyed on `hubspot_id` +
 `employee_id`:
@@ -302,8 +305,20 @@ conference_relevance_why, source, first_seen_at, last_refreshed_at, ats_status, 
 `hubspot_id, employee_id, employee_name, employee_title, employee_department, mutual_count,
 shared_employer, overlap_years, overlap_period, tier, referral_feedback`
 
-List-valued columns are `;`-separated. `ats_status` is written empty — the field exists, the data
-does not. `referral_feedback` is an attribute of the **pair**, so it lives only on the edge file.
+List-valued columns are `;`-separated. `referral_feedback` is an attribute of the **pair**, so it
+lives only on the edge file.
+
+`ats_status` and `ats_last_activity` are read from `<data-dir>/ats_status.csv`
+(`hubspot_id, ats_status, ats_last_activity`) when that file is present, and written empty when it
+is absent, as it is under `data/`. Neither is ever derived: an empty value means "no history **on
+file**", never "no history exists". In production this is a **read-only** lookup against Comeet, and
+nothing in either flow writes back — a person enters a hiring process on an explicit recruiter
+action and no other way (§9).
+
+The fixture exercises `in_process`, `declined`, `hired` and `withdrew`. A prior process is context
+for the call and **changes no score**: `ats_status` is not a component in §B3 and carries no weight
+anywhere. Somebody declined for one role two years ago may be the right person for this one, and
+that is a recruiter's judgment, not the pipeline's.
 
 ---
 
@@ -436,7 +451,7 @@ value_experience, value_industry, value_notes, value_past, value_conference, poi
 points_title, points_experience, points_industry, points_notes, points_past, points_conference,
 skills_matched, skills_semantic, skills_missing, rationale, interview_probes, ai_summary, ai_probes,
 referral_name, referral_title, referral_department, referral_tier, referral_why, referral_feedback,
-flagged_on_site, unverified, ats_status, conference_name, conference_date`
+flagged_on_site, unverified, ats_status, ats_last_activity, conference_name, conference_date`
 
 `match_score_after_feedback` equals `match_score` while no feedback exists. It is a separate column
 because the adjustment sits **on top of** the fit score, never inside it. `ai_summary` / `ai_probes`
@@ -497,7 +512,9 @@ erDiagram
 **pair**, not of the candidate. Storing feedback on the edge is what lets it adjust a score without
 mutating it — `match_score` and `match_score_after_feedback` stay separate columns.
 
-`ats_status` is emitted and unpopulated in this submission.
+`ats_status` is populated only where an `ats_status.csv` exists — under `data/edge_cases/`, not
+under `data/`. It is an attribute of the **person**, not of any job, so it lives on the pool row and
+Flow B copies it through unchanged.
 
 ---
 
@@ -522,6 +539,14 @@ in `DATA`; a verified row carries neither and its payload is unchanged. The view
 
 `build_rationale` and `build_interview_probes` take the same branch: no `N/M required skills matched`
 sentence and no `Probe depth on:` list, because both report a comparison that never happened.
+
+**The two optional filters describe the file they are in, not the dataset the template was written
+against.** `Hide prior candidates` and `Hide unverified` are rendered from the view's own `DATA`:
+live, with a count, when there is something to filter; disabled, with the reason, when there is not.
+A generated view can therefore never claim "all 75 attendees matched a profile" while holding
+thirteen rows, two of them unverified. A row with a prior process also carries an `ats` payload and
+renders an amber badge naming the outcome and its date, alongside a line stating that the score does
+not know about it.
 
 **`index.html`** is the landing page: every role with its headline numbers, opening that role's view
 on click, plus a jump-by-id box. Generated from `index_template.html` by `output.write_index`, which
@@ -628,6 +653,7 @@ person into a hiring process automatically.**
 | `past_titles` date missing or unparseable | treated as no overlap, never guessed | A6 | yes (1 case) |
 | open-ended `(YYYY-present)` tenure | parsed as running to the present | A6 | yes |
 | edge marked `insufficient` | retired before selection, score unchanged | B5 | no — fixture |
+| prior process in the ATS | flagged on the card and filterable, score unchanged | A9, §7 | no — fixture |
 | title in no `title_family` | title core falls to `0.25` or `0` | B3 | no — fixture |
 | `conference_domain` absent from `conference_domains.json` | `unassessed`, blank score — never a zero | A8 | no — fixture |
 | relevance is `0` on a partial read | `unassessed`, not `off_domain` | A8 | no — fixture |

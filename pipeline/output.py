@@ -42,7 +42,7 @@ MATCHES_COLUMNS = [
     "skills_matched", "skills_semantic", "skills_missing", "rationale",
     "interview_probes", "ai_summary", "ai_probes", "referral_name", "referral_title",
     "referral_department", "referral_tier", "referral_why",
-    "referral_feedback", "flagged_on_site", "unverified", "ats_status",
+    "referral_feedback", "flagged_on_site", "unverified", "ats_status", "ats_last_activity",
     "conference_name", "conference_date",
 ]
 
@@ -227,6 +227,7 @@ def build_match_row(job_row, pool_row: dict, requirements: dict, scored: dict, c
         "flagged_on_site": pool_row.get("flagged_on_site", False),
         "unverified": pool_row.get("unverified", False),
         "ats_status": pool_row.get("ats_status") or "",
+        "ats_last_activity": pool_row.get("ats_last_activity") or "",
         "conference_name": pool_row.get("conference_name") or "",
         "conference_date": pool_row.get("conference_date") or "",
     }
@@ -457,6 +458,13 @@ def _row_to_data_item(row: dict, pool_row: dict) -> dict:
         # view normalizes over exactly those weights, as score.py does, and
         # labels the rest "not scored" instead of showing them as a zero.
         **({"u": True, "b": row["score_basis"].split(";")} if pool_row.get("unverified") else {}),
+        # `ats` is emitted only when a prior process is on file, so a row with
+        # no history carries no field at all rather than an empty one. It is
+        # context on the card and a filter — never a term in the score
+        # (docs/reference/SPEC.md §A9).
+        **({"ats": {"s": pool_row["ats_status"],
+                    "d": pool_row.get("ats_last_activity") or ""}}
+           if pool_row.get("ats_status") else {}),
         "v": {name: (_exact_or_none(row["_values"][name]) if row["_values"][name] is not None else 0.0)
               for name in ("skills", "title", "experience", "industry", "notes", "past", "conference")},
         "score": row["match_score"],

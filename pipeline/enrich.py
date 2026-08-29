@@ -60,7 +60,7 @@ POOL_COLUMNS = [
     "flagged_on_site", "unverified", "conference_name", "conference_domain",
     "conference_date", "conference_relevance", "conference_class",
     "conference_relevance_why", "source", "first_seen_at", "last_refreshed_at",
-    "ats_status", "pool_status",
+    "ats_status", "ats_last_activity", "pool_status",
 ]
 
 EDGE_COLUMNS = [
@@ -581,6 +581,7 @@ def build_pool(sources: dict):
     aliases = sources["skill_aliases"]
     conference_domains = sources.get("conference_domains", {})
     feedback = sources.get("referral_feedback", {})
+    ats = sources.get("ats_status", {})
 
     merged = join_profiles(attendees, profiles)
     employees_by_id = employees.set_index("employee_id", drop=False)
@@ -637,7 +638,10 @@ def build_pool(sources: dict):
             # is the only trustworthy timestamp the source data carries.
             "first_seen_at": row["conference_date"],
             "last_refreshed_at": row["conference_date"],
-            "ats_status": "",
+            # Read-only, and never derived: an empty value means "no history on
+            # file", never "no history exists" (docs/reference/SPEC.md §A9).
+            "ats_status": ats.get(row["hubspot_id"], {}).get("ats_status", ""),
+            "ats_last_activity": ats.get(row["hubspot_id"], {}).get("ats_last_activity", ""),
             "pool_status": "active",
         })
 
