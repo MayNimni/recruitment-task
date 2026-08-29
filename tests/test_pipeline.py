@@ -15,6 +15,8 @@ a failing run is exactly the signal that a committed artifact has gone stale.
 
 import csv
 import hashlib
+import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -264,6 +266,193 @@ class TestTiers(unittest.TestCase):
         self.assertTrue(edge_rows)
         for edge in edge_rows:
             self.assertIn(edge["tier"], {"A", "B", "C", "D"})
+
+
+# --------------------------------------------------------------------------
+# A8 — conference-domain relevance (the signal-to-noise question)
+# --------------------------------------------------------------------------
+
+DISCIPLINE = {"kind": "discipline",
+              "title_families": ["devops engineer", "platform engineer"],
+              "skills": ["kubernetes", "terraform", "ci/cd"]}
+SUBJECT = {"kind": "subject",
+           "skills": ["sports", "sports analytics", "athlete"],
+           "industry_core": ["sport"],
+           "industry_adjacent": ["video", "broadcast", "media"]}
+DOMAINS = {"DevOps": DISCIPLINE, "Sports Technology": SUBJECT}
+
+
+def relevance(domain="DevOps", **row):
+    row.setdefault("conference_domain", domain)
+    return enrich.score_conference_relevance(row, DOMAINS)
+
+
+class TestConferenceRelevance(unittest.TestCase):
+    def test_a_discipline_event_ignores_the_employer_sector(self):
+        """A DevOps engineer at an agriculture company is a DevOps person."""
+        result = relevance(current_title="DevOps Engineer",
+                           skills_canonical=["Kubernetes", "Terraform"],
+                           industry="Agriculture Technology")
+        self.assertEqual(result["conference_class"], "core")
+        self.assertEqual(result["conference_relevance"], 100)
+
+    def test_a_subject_event_reads_industry_and_skills_not_the_title(self):
+        """Every discipline attends a sports-tech summit, so the title says nothing."""
+        insider = relevance("Sports Technology", current_title="Backend Engineer",
+                            skills_canonical=["Python", "Sports Analytics"],
+                            industry="Sports Technology")
+        outsider = relevance("Sports Technology", current_title="Backend Engineer",
+                             skills_canonical=["Python", "Java"], industry="Banking")
+        self.assertEqual(insider["conference_class"], "core")
+        self.assertEqual(outsider["conference_class"], "off_domain")
+        self.assertEqual(outsider["conference_relevance"], 0)
+
+    def test_an_adjacent_industry_scores_between_the_two(self):
+        result = relevance("Sports Technology", current_title="Backend Engineer",
+                           skills_canonical=["Python"], industry="Broadcast Media")
+        self.assertEqual(result["conference_class"], "adjacent")
+        self.assertIn("adjacent to this event", result["conference_relevance_why"])
+
+    def test_an_unknown_conference_domain_is_unassessed_never_a_zero(self):
+        result = relevance("Underwater Basket Weaving", current_title="DevOps Engineer",
+                           skills_canonical=["Kubernetes"], industry="Sports")
+        self.assertEqual(result["conference_class"], "unassessed")
+        self.assertEqual(result["conference_relevance"], "")
+
+    def test_a_title_only_read_can_confirm_but_cannot_condemn(self):
+        """Evidence of presence is conclusive where evidence of absence is not:
+        an unverified row has no skills, so a title that misses cannot mean noise."""
+        hit = relevance(current_title="Platform Engineer", skills_canonical=[], industry="")
+        miss = relevance(current_title="Marketing Associate", skills_canonical=[], industry="")
+        self.assertEqual(hit["conference_class"], "core")
+        self.assertEqual(miss["conference_class"], "unassessed")
+        self.assertEqual(miss["conference_relevance"], 0)
+        self.assertIn("missing", miss["conference_relevance_why"])
+
+    def test_nothing_readable_at_all_is_unassessed(self):
+        result = relevance("Sports Technology", current_title="Anything",
+                           skills_canonical=[], industry="")
+        self.assertEqual(result["conference_class"], "unassessed")
+        self.assertEqual(result["conference_relevance"], "")
+
+    def test_vocabulary_matching_is_whole_word_and_plural_insensitive(self):
+        self.assertEqual(enrich.domain_hits("Sports Analytics", ["sport"]), ["sport"])
+        self.assertEqual(enrich.domain_hits("Sport Science", ["sports"]), ["sports"])
+        self.assertEqual(enrich.domain_hits("Videographer", ["video"]), [])
+        # a multi-word token has to appear in order and unbroken
+        self.assertEqual(enrich.domain_hits("Sports domain knowledge", ["sports domain"]),
+                         ["sports domain"])
+        self.assertEqual(enrich.domain_hits("Domain knowledge of sports", ["sports domain"]), [])
+
+    def test_a_qualifier_after_the_dash_still_counts_as_domain_vocabulary(self):
+        """B3 drops ' - Video' to read the head noun. For a broadcast event that
+        qualifier is the signal, so the vocabulary check keeps the whole title."""
+        self.assertEqual(enrich.title_head("Senior ML Engineer - Video"), "ml engineer")
+        broadcast = {"kind": "discipline", "title_families": ["video engineer"],
+                     "skills": ["video", "ffmpeg"]}
+        result = enrich.score_conference_relevance(
+            {"conference_domain": "B", "current_title": "Senior ML Engineer - Video",
+             "skills_canonical": ["Python"], "industry": ""}, {"B": broadcast})
+        self.assertGreater(result["conference_relevance"], 0)
+        self.assertIn("title mentions video", result["conference_relevance_why"])
+
+
+class TestRelevanceStaysOutOfTheScore(unittest.TestCase):
+    """A8 answers "who was in the room", B3 answers "who fits this role".
+    They must never touch: relevance carries no weight and no column in the
+    match output (DESIGN.md §1)."""
+
+    def test_no_relevance_component_exists_in_the_scoring_weights(self):
+        self.assertNotIn("relevance", score.DEFAULT_WEIGHTS)
+        for name in score.ALL_COMPONENTS:
+            self.assertNotIn("conference_class", name)
+
+    def test_the_matches_csv_carries_no_relevance_column(self):
+        for column in read_matches()[0]:
+            self.assertNotIn("conference_relevance", column)
+            self.assertNotIn("conference_class", column)
+
+    def test_scoring_a_row_ignores_its_relevance_fields(self):
+        requirements = TestUnverified().requirements()
+        base = {"unverified": False, "current_title": "ML Engineer", "note_tags": [],
+                "skills_canonical": ["Python"], "years_experience": 8.0,
+                "industry": "Sports", "past_companies": [], "conference_domain": "",
+                "note_raw": ""}
+        plain, _ = score.score_components(dict(base), requirements)
+        labelled, _ = score.score_components(
+            dict(base, conference_relevance=0, conference_class="off_domain"), requirements)
+        self.assertEqual(plain, labelled)
+
+
+class TestRelevanceInTheCommittedPool(unittest.TestCase):
+    def pool(self, subdir=None):
+        directory = REPO_ROOT / "pool" / subdir if subdir else REPO_ROOT / "pool"
+        with open(directory / "talent_pool.csv", newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+
+    def test_every_row_carries_one_of_the_four_classes(self):
+        for row in self.pool():
+            self.assertIn(row["conference_class"],
+                          {"core", "adjacent", "off_domain", "unassessed"})
+
+    def test_the_class_agrees_with_the_score_on_every_row(self):
+        for row in self.pool():
+            score_text, classification = row["conference_relevance"], row["conference_class"]
+            with self.subTest(candidate=row["full_name"]):
+                if classification == "unassessed":
+                    continue          # blank, or a zero on an incomplete read
+                self.assertNotEqual(score_text, "")
+                value = int(score_text)
+                if classification == "core":
+                    self.assertGreaterEqual(value, enrich.CONFERENCE_CORE_THRESHOLD)
+                elif classification == "adjacent":
+                    self.assertTrue(0 < value < enrich.CONFERENCE_CORE_THRESHOLD)
+                else:
+                    self.assertEqual(value, 0)
+
+    def test_every_row_carries_a_reason(self):
+        for row in self.pool():
+            self.assertTrue(row["conference_relevance_why"].strip(), row["full_name"])
+
+    def test_the_off_domain_attendees_are_the_ones_the_brief_names(self):
+        """The hospital IT manager and the telecom network engineer are scored,
+        classified off-domain for their event, and still in the pool."""
+        by_name = {r["full_name"]: r for r in self.pool()}
+        self.assertEqual(by_name["Laura Gibson"]["conference_class"], "off_domain")
+        self.assertEqual(by_name["Patrick Duval"]["conference_class"], "off_domain")
+        self.assertEqual(len(self.pool()), 75, "classification must never drop a row")
+
+    def test_a_practitioner_outside_our_industry_is_still_core_to_their_event(self):
+        """An analytics engineer at an insurer belongs at a data summit. Relevance
+        to the event is not the same question as fit for a sports-tech role."""
+        by_name = {r["full_name"]: r for r in self.pool()}
+        self.assertEqual(by_name["Katarzyna Wojcik"]["current_title"], "Analytics Engineer")
+        self.assertEqual(by_name["Katarzyna Wojcik"]["industry"], "Insurance")
+        self.assertEqual(by_name["Katarzyna Wojcik"]["conference_class"], "core")
+
+    def test_the_fixture_exercises_all_four_classes(self):
+        classes = {r["conference_class"] for r in self.pool("edge_cases")}
+        self.assertEqual(classes, {"core", "adjacent", "off_domain", "unassessed"})
+
+    def test_the_landing_page_cannot_disagree_with_the_pool(self):
+        html = (REPO_ROOT / "index.html").read_text(encoding="utf-8")
+        match = re.search(r"const CONFERENCES = (\[.*?\]);", html, re.S)
+        self.assertIsNotNone(match, "index.html should carry the CONFERENCES literal")
+        page = {entry["name"]: entry for entry in json.loads(match.group(1))}
+
+        counts = {}
+        for row in self.pool():
+            event = counts.setdefault(row["conference_name"],
+                                      {"attendees": 0, "core": 0, "adjacent": 0,
+                                       "off_domain": 0, "unassessed": 0})
+            event["attendees"] += 1
+            event[row["conference_class"]] += 1
+
+        self.assertEqual(set(page), set(counts))
+        for name, expected in counts.items():
+            for key, value in expected.items():
+                with self.subTest(event=name, field=key):
+                    self.assertEqual(page[name][key], value)
 
 
 # --------------------------------------------------------------------------

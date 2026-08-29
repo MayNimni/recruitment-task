@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "Fixture copy. \"Operations\" and \"Data Analytics\" are deliberately absent so the",
+    "unknown-domain branch (class \"unassessed\", blank score) is exercised by a run",
+    "rather than argued for in prose. See docs/reference/SPEC.md §A8."
+  ],
+  "Computer Vision": {
+    "kind": "discipline",
+    "title_families": [
+      "computer vision engineer",
+      "cv engineer",
+      "ml engineer",
+      "machine learning engineer",
+      "research engineer"
+    ],
+    "skills": [
+      "computer vision",
+      "object detection",
+      "pytorch",
+      "tensorflow",
+      "opencv",
+      "yolo",
+      "image processing",
+      "deep learning"
+    ]
+  },
+  "DevOps": {
+    "kind": "discipline",
+    "title_families": [
+      "devops engineer",
+      "devops",
+      "platform engineer",
+      "site reliability engineer",
+      "sre",
+      "infrastructure engineer",
+      "cloud engineer"
+    ],
+    "skills": [
+      "kubernetes",
+      "terraform",
+      "ci/cd",
+      "docker",
+      "helm",
+      "jenkins",
+      "monitoring"
+    ]
+  },
+  "Sports Technology": {
+    "kind": "subject",
+    "skills": [
+      "sports",
+      "sports domain knowledge",
+      "sports analytics",
+      "athlete",
+      "wearables",
+      "player tracking"
+    ],
+    "industry_core": [
+      "sport"
+    ],
+    "industry_adjacent": [
+      "video",
+      "broadcast",
+      "streaming",
+      "media",
+      "ott"
+    ]
+  }
+}

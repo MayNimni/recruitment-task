@@ -1,11 +1,14 @@
-"""Flow A steps 2-8: join, skill normalization, note tagging, referral edges,
-tiering, and the pool write. Every function here is job-independent — none of
-them may read job_openings.csv (docs/reference/SPEC.md §0 invariants).
+"""Flow A steps 2-9: join, skill normalization, note tagging, referral edges,
+tiering, conference-domain relevance, and the pool write. Every function here is
+job-independent — none of them may read job_openings.csv (docs/reference/SPEC.md
+§0 invariants). That includes A8, which measures an attendee against the event
+they came to, never against a role.
 
 List-valued fields move through this module as Python lists and are only
 joined into ';'-strings at the very end, in build_pool / write_pool.
 """
 
+import math
 import re
 from pathlib import Path
 
@@ -55,7 +58,8 @@ POOL_COLUMNS = [
     "industry", "past_companies", "past_titles", "skills_raw",
     "skills_canonical", "skills_alias_hits", "note_raw", "note_tags",
     "flagged_on_site", "unverified", "conference_name", "conference_domain",
-    "conference_date", "source", "first_seen_at", "last_refreshed_at",
+    "conference_date", "conference_relevance", "conference_class",
+    "conference_relevance_why", "source", "first_seen_at", "last_refreshed_at",
     "ats_status", "pool_status",
 ]
 
@@ -350,6 +354,180 @@ def find_shared_employers(row, employees: pd.DataFrame, generic_tokens=GENERIC_C
     return matches
 
 
+# A8. Two weight sets, one per kind of event, and nothing per-domain to tune.
+# A discipline event is legible from a title and a skill list; a subject event
+# is legible from what someone works on and where they work, because every
+# discipline attends one. The full argument is in DESIGN.md §1.
+CONFERENCE_RELEVANCE_WEIGHTS = {
+    "discipline": {"title": 55, "skills": 45},
+    "subject": {"skills": 50, "industry": 50},
+}
+CONFERENCE_CORE_THRESHOLD = 70
+
+# Component name -> the word the recruiter-facing reason uses for it.
+BASIS_NOUNS = {"title": "title", "skills": "skill", "industry": "industry"}
+
+# Re-declared rather than imported from score.py, which owns the Flow B copy —
+# enrich.py imports no peer (docs/reference/SPEC.md §8). Same list, same purpose:
+# reduce a title to its head noun before comparing it to a family.
+TITLE_QUALIFIER_TOKENS = frozenset({
+    "senior", "sr", "staff", "principal", "lead", "head", "of", "junior", "jr",
+})
+
+
+def domain_words(text) -> list:
+    """Lowercase word list, each word plural-stemmed by stem_token.
+
+    Stemming both sides is what lets the token 'sport' match 'Sports Analytics'
+    and 'sports' match 'Sport Science' — the same reason A6 stems its drop-list.
+    """
+    return [stem_token(word) for word in re.findall(r"[a-z0-9+#]+", str(text).lower())]
+
+
+def domain_hits(text, tokens) -> list:
+    """Which of `tokens` appear in `text` as a contiguous run of whole words.
+
+    Never a substring match (docs/reference/SPEC.md §A6): 'video' must not fire on
+    'videographer', and a one-word token must not fire inside a longer word.
+    Multi-word tokens ('sports domain knowledge') match only in order.
+    """
+    words = domain_words(text)
+    found = []
+    for token in tokens:
+        needle = domain_words(token)
+        if not needle:
+            continue
+        if any(words[i:i + len(needle)] == needle for i in range(len(words) - len(needle) + 1)):
+            found.append(token)
+    return found
+
+
+def title_head(title) -> str:
+    """The part of a title before ' - ', minus seniority qualifiers.
+
+    'Senior ML Engineer - Video' -> 'ml engineer'. The qualifier after the dash
+    is dropped here on purpose so the *family* comparison reads the head noun,
+    exactly as B3 does — but score_conference_relevance still matches its
+    vocabulary against the untouched title, because for a broadcast event the
+    ' - Video' is the signal.
+    """
+    head = str(title).split(" - ")[0].lower()
+    return " ".join(w for w in re.findall(r"[a-z/]+", head) if w not in TITLE_QUALIFIER_TOKENS)
+
+
+def score_conference_relevance(pool_row: dict, conference_domains: dict) -> dict:
+    """A8. How well this attendee's own profession matches the domain of the
+    event they attended — the signal-to-noise question, answered without a job.
+
+    Job-independent by construction, so it belongs to Flow A: it reads the
+    attendee and the event, never a job row, and no component of it reaches
+    match_score. A conference draws practitioners and passers-by; this says
+    which is which, so the pool can be read per event before any role exists.
+
+    Returns the three columns as a dict. Nothing is ever filtered on it.
+
+    Classification:
+      core        >= 70 — most of what this event is legible from
+      adjacent    > 0   — some signal
+      off_domain  0     — none, on a complete read
+      unassessed        — the domain has no vocabulary, or too little of the
+                          profile exists to conclude anything. A zero score on
+                          an incomplete read is 'unassessed', never
+                          'off_domain': evidence of presence is conclusive
+                          where evidence of absence is not.
+    """
+    domain = str(pool_row.get("conference_domain", "")).strip()
+    config = conference_domains.get(domain) if domain else None
+    if not isinstance(config, dict):
+        return {
+            "conference_relevance": "",
+            "conference_class": "unassessed",
+            "conference_relevance_why": (
+                f"no domain vocabulary on file for '{domain}'" if domain
+                else "no conference domain on the record"
+            ),
+        }
+
+    kind = config.get("kind", "discipline")
+    weights = CONFERENCE_RELEVANCE_WEIGHTS[kind]
+    skill_vocab = config.get("skills", [])
+    values, basis, why = {}, [], []
+
+    if "title" in weights:
+        title = str(pool_row.get("current_title") or pool_row.get("title") or "").strip()
+        if title:
+            families = config.get("title_families", [])
+            head = title_head(title)
+            token_hits = domain_hits(title, skill_vocab)
+            if any(head.endswith(family) for family in families):
+                values["title"] = 1.0
+                why.append("job title sits in this event's discipline")
+            elif token_hits:
+                values["title"] = 0.5
+                why.append(f"title mentions {', '.join(token_hits[:2])}")
+            else:
+                values["title"] = 0.0
+            basis.append("title")
+
+    if "skills" in weights:
+        raw_skills = pool_row.get("skills_canonical", "")
+        skills = raw_skills if isinstance(raw_skills, list) else split_list(raw_skills)
+        if skills:
+            hits = sorted({skill for skill in skills if domain_hits(skill, skill_vocab)})
+            # Two skills in the event's vocabulary is a practitioner; one is a
+            # real but partial signal. Dividing by the vocabulary's own length
+            # would only measure how long the list is.
+            values["skills"] = min(1.0, len(hits) / 2)
+            if hits:
+                why.append(f"{len(hits)} domain skill{'' if len(hits) == 1 else 's'}: "
+                           f"{', '.join(hits[:3])}")
+            basis.append("skills")
+
+    if "industry" in weights:
+        industry = str(pool_row.get("industry", "")).strip()
+        if industry:
+            if domain_hits(industry, config.get("industry_core", [])):
+                values["industry"] = 1.0
+                why.append(f"works in {industry}")
+            elif domain_hits(industry, config.get("industry_adjacent", [])):
+                values["industry"] = 0.5
+                why.append(f"works in {industry}, adjacent to this event")
+            else:
+                values["industry"] = 0.0
+            basis.append("industry")
+
+    if not basis:
+        return {
+            "conference_relevance": "",
+            "conference_class": "unassessed",
+            "conference_relevance_why":
+                "no profile matched — nothing this event's domain can be read from",
+        }
+
+    weight_sum = sum(weights[name] for name in basis)
+    score = math.floor(sum(values[name] * weights[name] for name in basis) / weight_sum * 100 + 0.5)
+    complete = len(basis) == len(weights)
+
+    if score >= CONFERENCE_CORE_THRESHOLD:
+        classification = "core"
+    elif score > 0:
+        classification = "adjacent"
+    elif complete:
+        classification = "off_domain"
+        why.append(f"no {' or '.join(BASIS_NOUNS[name] for name in basis)} signal "
+                   f"for this event's domain")
+    else:
+        classification = "unassessed"
+        why.append(f"read on {' and '.join(BASIS_NOUNS[name] for name in basis)} only — "
+                   f"the rest of the profile is missing")
+
+    return {
+        "conference_relevance": score,
+        "conference_class": classification,
+        "conference_relevance_why": "; ".join(why),
+    }
+
+
 def assign_tier(edge: dict):
     """A7. Combines three signals: a shared former employer, whether the two
     people's tenures there actually overlap, and whether this specific
@@ -394,13 +572,14 @@ def assign_tier(edge: dict):
 
 
 def build_pool(sources: dict):
-    """Runs A2 through A7 over every attendee and returns (pool_df, edges_df),
-    still unwritten. write_pool (A8) serializes them.
+    """Runs A2 through A8 over every attendee and returns (pool_df, edges_df),
+    still unwritten. write_pool (A9) serializes them.
     """
     attendees = sources["attendees"]
     profiles = sources["profiles"]
     employees = sources["employees"]
     aliases = sources["skill_aliases"]
+    conference_domains = sources.get("conference_domains", {})
     feedback = sources.get("referral_feedback", {})
 
     merged = join_profiles(attendees, profiles)
@@ -415,6 +594,16 @@ def build_pool(sources: dict):
             row.get("top_skills", ""), aliases
         )
         note_tags, flagged_on_site = extract_note_tags(row.get("notes", ""), aliases)
+        relevance = score_conference_relevance(
+            {
+                "conference_domain": row["conference_domain"],
+                "current_title": row.get("current_title", ""),
+                "title": row["title"],
+                "skills_canonical": skills_canonical,
+                "industry": row.get("industry", ""),
+            },
+            conference_domains,
+        )
 
         pool_rows.append({
             "hubspot_id": row["hubspot_id"],
@@ -440,6 +629,9 @@ def build_pool(sources: dict):
             "conference_name": row["conference_name"],
             "conference_domain": row["conference_domain"],
             "conference_date": row["conference_date"],
+            "conference_relevance": relevance["conference_relevance"],
+            "conference_class": relevance["conference_class"],
+            "conference_relevance_why": relevance["conference_relevance_why"],
             "source": row["source"],
             # No clock is available (or allowed) in Flow A; the conference date
             # is the only trustworthy timestamp the source data carries.
@@ -489,6 +681,14 @@ def build_pool(sources: dict):
     pool_df = pd.DataFrame(pool_rows, columns=POOL_COLUMNS)
     pool_df = pool_df.sort_values("hubspot_id", kind="stable").reset_index(drop=True)
 
+    # A8 returns '' for an unassessed row, which would make the whole column a
+    # float and write every score as '100.0'. Int64 is the nullable integer
+    # dtype: blanks stay blank in the CSV, scores stay whole numbers.
+    pool_df["conference_relevance"] = pd.array(
+        [pd.NA if value == "" else int(value) for value in pool_df["conference_relevance"]],
+        dtype="Int64",
+    )
+
     edges_df = pd.DataFrame(edge_rows, columns=EDGE_COLUMNS)
     if not edges_df.empty:
         edges_df = edges_df.sort_values(
@@ -499,7 +699,7 @@ def build_pool(sources: dict):
 
 
 def write_pool(pool_df: pd.DataFrame, edges_df: pd.DataFrame, pool_dir):
-    """A8. Writes pool/talent_pool.csv and pool/referral_edges.csv."""
+    """A9. Writes pool/talent_pool.csv and pool/referral_edges.csv."""
     pool_dir = Path(pool_dir)
     pool_dir.mkdir(parents=True, exist_ok=True)
 

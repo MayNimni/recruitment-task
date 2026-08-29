@@ -41,7 +41,8 @@ model calls at runtime.** One opt-in exception, `match --llm`, is specified in �
 data/
   conference_attendees.csv    linkedin_profiles.csv    wsc_employees.csv    job_openings.csv
   skill_aliases.json          title_families.json      company_domains.json
-  edge_cases/                 the same seven files, synthetic, plus:
+  conference_domains.json     per-event domain vocabulary — A8
+  edge_cases/                 the same eight files, synthetic, plus:
     referral_feedback.csv     optional 8th source — seeds retired edges (§4)
 pool/
   talent_pool.csv             referral_edges.csv                    written by Flow A
@@ -103,9 +104,10 @@ python pipeline/main.py ingest --data-dir data/edge_cases   # any dir holding th
 | `data/skill_aliases.json` | config | `build_aliases.py`, offline | A3, B1 |
 | `data/title_families.json` | config | — | B3 |
 | `data/company_domains.json` | config | — | B3 |
+| `data/conference_domains.json` | config | — | A8 |
 | `<data-dir>/referral_feedback.csv` | source, **optional** | recruiter (production: HubSpot). Absent under `data/`; present under `data/edge_cases/` | A7 |
-| `pool/talent_pool.csv` | state | A8 | B2 |
-| `pool/referral_edges.csv` | state | A8 | B2 |
+| `pool/talent_pool.csv` | state | A9 | B2 |
+| `pool/referral_edges.csv` | state | A9 | B2 |
 | `output/JOB00N_matches.csv` | artifact | B8 | index |
 | `output/JOB00N_recruiter_view.html` | artifact | B8 | — |
 | `index.html` | artifact | `main.py index` | — |
@@ -124,9 +126,10 @@ flowchart LR
   S4 --> S5["A5 Mutual connections"]
   S5 --> S6["A6 Shared employers"]
   S6 --> S7["A7 Assign tier"]
-  S7 --> S8["A8 Write pool"]
-  S8 --> P1[("talent_pool.csv")]
-  S8 --> P2[("referral_edges.csv")]
+  S7 --> S8["A8 Conference relevance"]
+  S8 --> S9["A9 Write pool"]
+  S9 --> P1[("talent_pool.csv")]
+  S9 --> P2[("referral_edges.csv")]
 ```
 
 | Step | Module · function | Input | Output |
@@ -138,7 +141,8 @@ flowchart LR
 | A5 | `enrich.resolve_mutual_connections` | `wsc_mutual_connections`, roster | one edge per listed employee, `mutual_count` |
 | A6 | `enrich.find_shared_employers` | `past_companies`, `past_titles`, `work_history` | more edges, `shared_employer`, `overlap_*` |
 | A7 | `enrich.assign_tier` | edge attributes | `tier` ∈ {A, B, C, D}, `referral_feedback` |
-| A8 | `enrich.write_pool` | rows, edges | two CSVs |
+| A8 | `enrich.score_conference_relevance` | attendee, `conference_domains` | `conference_relevance`, `conference_class`, `conference_relevance_why` |
+| A9 | `enrich.write_pool` | rows, edges | two CSVs |
 
 ### A2 — join
 
@@ -216,15 +220,81 @@ through HubSpot after asking the colleague. A7 reads it from `referral_feedback.
 (`hubspot_id, employee_id, referral_feedback`) when that file is present, and writes `not_requested`
 for every edge when it is absent, as it is under `data/`.
 
-### A8 — output columns
+### A8 — conference-domain relevance
+
+The signal-to-noise question, answered **without a job**: does this attendee's own profession match
+the domain of the event they came to? A DevOps conference draws platform engineers and SREs, and
+also IT managers, network admins and vendor reps. Ranking against an open role separates them for
+*that role* (§5); this separates them for the *event*, so the pool can be read per conference before
+any role exists. **Nothing is ever filtered on the result.**
+
+`conference_domains.json` is keyed on the `conference_domain` the attendee export already carries,
+so two events on the same topic share one entry. Each entry declares a `kind`, and that is the whole
+design:
+
+| `kind` | The event is about | Legible from | Weights |
+| :---- | :---- | :---- | :---- |
+| `discipline` | a craft — DevOps, data engineering, broadcast engineering | title, skills | title 55, skills 45 |
+| `subject` | a domain — sports technology | skills, industry | skills 50, industry 50 |
+
+**Why the split, and why the title is absent from one of them.** A title tells you whether somebody
+practises a craft: a DevOps engineer at an agriculture company is a DevOps person, and the employer's
+sector is irrelevant. It tells you nothing about a subject event, because every discipline attends
+one — the sports-tech summit's attendees are ML, data, backend and product people, and what separates
+the practitioner from the passer-by is what they work on and where. Two weight sets, one per kind, and
+nothing per-domain to tune.
+
+**Components**, each in `[0,1]`, weight applied once:
+
+| Component | Value |
+| :---- | :---- |
+| Title | `1.0` if the title's head noun ends with a declared `title_families` entry; `0.5` if the **untouched** title contains a declared vocabulary token; else `0` |
+| Skills | `min(1.0, hits ÷ 2)` over `skills_canonical` against the declared vocabulary |
+| Industry | `1.0` on an `industry_core` token, `0.5` on an `industry_adjacent` token, else `0` |
+
+The head noun is taken as in §B3 — the part before ` - `, minus seniority qualifiers — but the
+vocabulary check reads the **whole** title, because for a broadcast event the ` - Video` in
+`Senior ML Engineer - Video` is precisely the signal B3 is right to discard.
+
+Matching is whole-word and plural-stemmed, and a multi-word token must appear contiguously and in
+order. Never a substring, for the same reason §A6 forbids one. Two vocabulary hits is a practitioner
+and one is a real but partial signal; dividing by the vocabulary's own length would only measure how
+long the list is.
+
+`conference_relevance` = `round_half_up(Σ(value × weight) ÷ Σ(weight) × 100)` over the components
+that are **computable for this person** — the same normalization as §B3, for the same reason.
+
+| `conference_class` | Condition |
+| :---- | :---- |
+| `core` | `≥ 70` |
+| `adjacent` | `> 0` |
+| `off_domain` | `0`, on a complete read |
+| `unassessed` | the domain has no entry in `conference_domains.json`, or nothing was computable, or the score is `0` on an **incomplete** read |
+
+That last row is the rule that matters. **Evidence of presence is conclusive where evidence of
+absence is not.** An unverified attendee has no skills and no industry, so a registration title that
+lands squarely in the event's discipline is enough to call them `core` — but a title that misses is
+not enough to call them noise, because the profile that would show their skills is the thing that is
+missing. A zero on a partial read is `unassessed`, never `off_domain`.
+
+`conference_relevance_why` states the reason in plain text, naming the skills that matched and the
+industry that was read, so the classification is never a bare label.
+
+**This never touches `match_score`.** A8 is a Flow A step and carries no weight in §B3; the three
+columns it writes appear in `talent_pool.csv` and on the landing page, and in no output of Flow B.
+Relevance to an event and fit for a role are different questions — an analytics engineer at an
+insurer is `core` to a data summit and a poor match for a sports-tech role, and both statements are
+true at once.
+
+### A9 — output columns
 
 **`pool/talent_pool.csv`** — one row per attendee, keyed on `hubspot_id`:
 
 `hubspot_id, full_name, email, company, title, linkedin_url, current_company, current_title,
 location, years_experience, industry, past_companies, past_titles, skills_raw, skills_canonical,
 skills_alias_hits, note_raw, note_tags, flagged_on_site, unverified, conference_name,
-conference_domain, conference_date, source, first_seen_at, last_refreshed_at, ats_status,
-pool_status`
+conference_domain, conference_date, conference_relevance, conference_class,
+conference_relevance_why, source, first_seen_at, last_refreshed_at, ats_status, pool_status`
 
 **`pool/referral_edges.csv`** — one row per candidate-employee pair, keyed on `hubspot_id` +
 `employee_id`:
@@ -530,7 +600,8 @@ mapping: what each pipeline step reads today, and what replaces it in production
 | A5 | parse delimited id list | consent-gated — TeamLink (a Recruiter seat per employee) or a voluntary employee export; no provider sells a private connection graph. Absent when neither exists, and the shared-employer step (A6) still produces edges. Roster from the HR system |
 | A6 | roster comparison | unchanged |
 | A7 | tier from stored signals | unchanged; `referral_feedback` written back from HubSpot |
-| A8 | write two CSVs | write HubSpot contact properties — HubSpot is the system of record |
+| A8 | vocabulary per conference domain | same rule; the vocabulary is generated from the event's own programme by a model and reviewed, instead of hand-written |
+| A9 | write two CSVs | write HubSpot contact properties — HubSpot is the system of record |
 | B1 | read three CSV columns | Comeet role by id, parsed from prose by a model |
 | B2 | read two CSVs | query contact properties for the pool segment |
 | **B3–B6** | **arithmetic** | **unchanged** |
@@ -558,6 +629,8 @@ person into a hiring process automatically.**
 | open-ended `(YYYY-present)` tenure | parsed as running to the present | A6 | yes |
 | edge marked `insufficient` | retired before selection, score unchanged | B5 | no — fixture |
 | title in no `title_family` | title core falls to `0.25` or `0` | B3 | no — fixture |
+| `conference_domain` absent from `conference_domains.json` | `unassessed`, blank score — never a zero | A8 | no — fixture |
+| relevance is `0` on a partial read | `unassessed`, not `off_domain` | A8 | no — fixture |
 | `pool/` empty or missing | non-zero exit naming `ingest` | B2 | CLI |
 | unknown `job_id` | non-zero exit listing valid ids | B1 | CLI |
 

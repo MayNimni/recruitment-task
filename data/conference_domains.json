@@ -1,0 +1,67 @@
+{
+  "_comment": [
+    "A8 — conference-domain relevance. Keyed on conference_domain. Keys beginning",
+    "with an underscore are ignored. Full rules: docs/reference/SPEC.md §A8.",
+    "'kind' says what the event is legible from. discipline — a craft event (DevOps,",
+    "data engineering, broadcast): a title and a skill list say whether someone",
+    "practises it, the employer's sector does not. subject — a domain event (sports",
+    "tech): every discipline attends, so relevance is what they work on and where.",
+    "A conference_domain missing from this file is 'unassessed', never a zero."
+  ],
+
+  "Sports Technology & Analytics": {
+    "kind": "subject",
+    "skills": [
+      "sports", "sports domain knowledge", "sports analytics", "athlete",
+      "wearables", "performance analysis", "player tracking", "match data",
+      "sports science"
+    ],
+    "industry_core": ["sport"],
+    "industry_adjacent": ["video", "broadcast", "streaming", "media", "ott"]
+  },
+
+  "Data Engineering & AI/ML": {
+    "kind": "discipline",
+    "title_families": [
+      "data engineer", "data platform engineer", "analytics engineer",
+      "data scientist", "data analyst", "data", "ml engineer",
+      "machine learning engineer", "ml research engineer",
+      "ml solutions architect", "research engineer"
+    ],
+    "skills": [
+      "spark", "dbt", "airflow", "kafka", "snowflake", "delta lake", "sql",
+      "pytorch", "tensorflow", "deep learning", "machine learning",
+      "computer vision", "object detection", "sagemaker", "ml architecture",
+      "causal ml", "recommendation systems", "data modeling", "etl",
+      "sports analytics"
+    ]
+  },
+
+  "DevOps & Platform Engineering": {
+    "kind": "discipline",
+    "title_families": [
+      "devops engineer", "devops", "devops lead", "platform engineer",
+      "platform architect", "site reliability engineer", "sre",
+      "infrastructure engineer", "cloud engineer"
+    ],
+    "skills": [
+      "kubernetes", "terraform", "ci/cd", "helm", "jenkins", "monitoring",
+      "infrastructure", "docker", "gcp", "azure", "reliability", "cdn",
+      "observability"
+    ]
+  },
+
+  "Broadcast & Video Technology": {
+    "kind": "discipline",
+    "title_families": [
+      "video engineer", "video streaming engineer", "video systems engineer",
+      "video platform engineer", "streaming engineer", "broadcast engineer",
+      "camera systems engineer", "media delivery engineer", "video ai engineer"
+    ],
+    "skills": [
+      "ffmpeg", "video streaming", "video", "broadcast tech", "broadcast",
+      "evs", "camera systems", "ott platforms", "cdn", "multi-camera",
+      "video captioning", "5g broadcast", "streaming", "encoding", "transcoding"
+    ]
+  }
+}

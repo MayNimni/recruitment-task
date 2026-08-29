@@ -26,7 +26,9 @@ assumptions, what I'd add with more time.
 
 The live results, in your browser. It lists the four open roles with their headline numbers;
 clicking one opens that role's recruiter view — the ranked shortlist, every score broken into its
-seven components, and the colleague best placed to make an introduction.
+seven components, and the colleague best placed to make an introduction. Below the roles,
+**Who was actually in the room** breaks each conference down into the attendees who work in what
+the event was about and the ones who don't — a judgment made at ingestion, with no role involved.
 
 Same thing offline: clone the repo and double-click `index.html` at the root. No server, no API key,
 no install — every report is committed, so it works on a fresh clone before you run anything.
@@ -72,7 +74,7 @@ python3 pipeline/main.py run --job JOB001
 
 | Command | Does |
 | :---- | :---- |
-| `ingest` | Flow A |
+| `ingest` | Flow A — also prints the per-conference relevance breakdown |
 | `match --job JOB001` | Flow B |
 | `run --job JOB001` | both |
 | `index` | rebuild `index.html` (runs automatically after `match` / `run`) |
@@ -112,6 +114,13 @@ seven component values and their point contributions in their own columns, match
 missing skills, a rationale sentence and interview probes, the referral contact and tier, the
 `unverified` / `flagged_on_site` / `ats_status` flags, and provenance.
 
+**`pool/talent_pool.csv`** — one row per attendee, written by Flow A and independent of any role.
+Alongside the enriched profile it carries `conference_relevance`, `conference_class` (`core` /
+`adjacent` / `off_domain` / `unassessed`) and `conference_relevance_why`: how well each attendee's
+own profession matches the domain of the event they came to. **It is never filtered on and carries
+no weight in `match_score`** — relevance to an event and fit for a role are different questions
+([`DESIGN.md` §1](DESIGN.md#separating-who-was-in-the-room-from-who-fits-this-role)).
+
 **`output/JOB00N_recruiter_view.html`** — self-contained, opens on a double click, no server. Each
 match percentage expands into the seven-component breakdown, so any score can be traced to
 `value × weight`. Weight sliders re-rank live **in browser memory only** — they never write to disk
@@ -119,9 +128,10 @@ and a reset button restores the defaults, so an exported CSV always means one fi
 
 ## Edge cases
 
-`data/edge_cases/` is a 13-row synthetic fixture exercising ten branches the supplied data never
+`data/edge_cases/` is a 13-row synthetic fixture exercising twelve branches the supplied data never
 reaches — no LinkedIn match, an empty skill list, no note, no referral path, an unparseable tenure
-date, a retired referral, a title in no known family.
+date, a retired referral, a title in no known family, a conference domain with no vocabulary on
+file, and an attendee too thinly recorded to classify either way.
 
 ```bash
 python3 pipeline/main.py run --job JOB001 --data-dir data/edge_cases

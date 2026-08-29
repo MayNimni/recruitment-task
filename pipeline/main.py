@@ -9,8 +9,8 @@
     python main.py ingest --data-dir data/edge_cases           # reads data/edge_cases/, writes pool/edge_cases/
     python main.py match --job JOB001 --data-dir data/edge_cases  # writes output/edge_cases/
 
---data-dir points ingest/match/run at any directory holding the same seven
-files (four CSVs + three JSON configs) as data/ — a fixture set, most likely.
+--data-dir points ingest/match/run at any directory holding the same eight
+files (four CSVs + four JSON configs) as data/ — a fixture set, most likely.
 pool/ and output/ follow it: with the default data/, paths are pool/ and
 output/ exactly as before; with any other --data-dir, they become
 pool/<data-dir's name>/ and output/<data-dir's name>/, so a fixture run can
@@ -44,7 +44,7 @@ POOL_BOOL_COLUMNS = ["unverified", "flagged_on_site"]
 
 
 DATA_DIR_HELP = (
-    "directory holding the four source CSVs + three config JSONs (default: data/); "
+    "directory holding the four source CSVs + four config JSONs (default: data/); "
     "pool/ and output/ paths follow it — see module docstring"
 )
 
@@ -100,6 +100,31 @@ def run_ingest(data_dir: Path, pool_dir: Path) -> None:
 
     print(f"wrote {len(pool_df)} pool rows to {pool_path}")
     print(f"wrote {len(edges_df)} referral edges to {edges_path}")
+    print_relevance_summary(pool_df)
+
+
+RELEVANCE_CLASSES = ["core", "adjacent", "off_domain", "unassessed"]
+
+
+def print_relevance_summary(pool_df) -> None:
+    """A8's answer, per event: who in this room actually works in what the room
+    was about. Printed because it is the one Flow A output that is a finding
+    rather than a file — the signal-to-noise question, answered before any role
+    exists. Nothing is dropped on it; the counts describe the pool, they do not
+    filter it.
+    """
+    if "conference_class" not in pool_df.columns or pool_df.empty:
+        return
+
+    width = max(len(str(name)) for name in pool_df["conference_name"])
+    print("\nconference-domain relevance (no job involved):")
+    for name, group in pool_df.groupby("conference_name", sort=True):
+        counts = group["conference_class"].value_counts()
+        breakdown = "  ".join(
+            f"{counts.get(cls, 0):>2} {cls.replace('_', '-')}"
+            for cls in RELEVANCE_CLASSES if counts.get(cls, 0)
+        )
+        print(f"  {str(name):<{width}}  {len(group):>3} attendees   {breakdown}")
 
 
 def run_index() -> None:
@@ -114,9 +139,8 @@ def run_index() -> None:
     import output
 
     pool_rows, _ = read_pool(POOL_DIR)
-    conference_count = len({r["conference_name"] for r in pool_rows if r.get("conference_name")})
     index_path = output.write_index(
-        load_jobs(DATA_DIR), len(pool_rows), conference_count,
+        load_jobs(DATA_DIR), pool_rows,
         INDEX_TEMPLATE_PATH, OUTPUT_DIR, REPO_ROOT,
         fixture_output_dir=OUTPUT_DIR / "edge_cases",
     )

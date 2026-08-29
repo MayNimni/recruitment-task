@@ -504,14 +504,46 @@ def _index_job_entry(job_row: dict, output_dir: Path) -> dict:
     return entry
 
 
-def write_index(jobs_df, pool_size: int, conference_count: int, template_path,
+RELEVANCE_CLASSES = ["core", "adjacent", "off_domain", "unassessed"]
+
+
+def _index_conference_entries(pool_rows: list) -> list:
+    """One row per event for the landing page's relevance table: how many of
+    the people in that room work in what the room was about.
+
+    Reads A8's stored classification rather than recomputing it — the pool is
+    where that judgment lives, and the page must not be able to disagree with
+    it. Ordered by event date so the table reads as a history of the programme.
+    """
+    events = {}
+    for row in pool_rows:
+        name = row.get("conference_name", "")
+        if not name:
+            continue
+        event = events.setdefault(name, {
+            "name": name,
+            "domain": row.get("conference_domain", ""),
+            "date": row.get("conference_date", ""),
+            "attendees": 0,
+            **{cls: 0 for cls in RELEVANCE_CLASSES},
+        })
+        event["attendees"] += 1
+        classification = row.get("conference_class", "")
+        if classification in event:
+            event[classification] += 1
+        event["date"] = min(event["date"], row.get("conference_date", "")) or event["date"]
+
+    return sorted(events.values(), key=lambda e: (e["date"], e["name"]))
+
+
+def write_index(jobs_df, pool_rows: list, template_path,
                 output_dir, repo_root, fixture_output_dir=None) -> Path:
     """Writes index.html at the repo root: the landing page a reviewer opens
     first. Lists every role in job_openings.csv, links the ones whose report
     already exists, and names the command for the ones that don't.
 
     Same fill mechanism as write_recruiter_view — the template owns the markup
-    and the CSS, and this replaces only the three data literals.
+    and the CSS, and this replaces only the four data literals.
     """
     output_dir, repo_root = Path(output_dir), Path(repo_root)
     jobs = [_index_job_entry(row, output_dir) for row in jobs_df.to_dict(orient="records")]
@@ -529,9 +561,11 @@ def write_index(jobs_df, pool_size: int, conference_count: int, template_path,
                 "href": f"{fixture_dir.parent.name}/{fixture_dir.name}/{fixture_view.name}",
             }
 
+    conferences = _index_conference_entries(pool_rows)
     literals = {
         "const JOBS =": json.dumps(jobs, ensure_ascii=False),
-        "const POOL =": json.dumps({"size": pool_size, "conferences": conference_count}),
+        "const POOL =": json.dumps({"size": len(pool_rows), "conferences": len(conferences)}),
+        "const CONFERENCES =": json.dumps(conferences, ensure_ascii=False),
         "const FIXTURE =": json.dumps(fixture, ensure_ascii=False),
     }
 

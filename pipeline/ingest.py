@@ -18,6 +18,7 @@ JOBS_FILE = "job_openings.csv"
 SKILL_ALIASES_FILE = "skill_aliases.json"
 TITLE_FAMILIES_FILE = "title_families.json"
 COMPANY_DOMAINS_FILE = "company_domains.json"
+CONFERENCE_DOMAINS_FILE = "conference_domains.json"
 REFERRAL_FEEDBACK_FILE = "referral_feedback.csv"
 
 
@@ -69,6 +70,15 @@ def load_company_domains(data_dir: Path) -> dict:
     return load_json_config(data_dir, COMPANY_DOMAINS_FILE)
 
 
+def load_conference_domains(data_dir: Path) -> dict:
+    """A1. The A8 vocabulary, keyed on conference_domain. Underscore-prefixed
+    keys are documentation inside the file and are dropped here, so no caller
+    can mistake one for an event domain.
+    """
+    config = load_json_config(data_dir, CONFERENCE_DOMAINS_FILE)
+    return {key: value for key, value in config.items() if not key.startswith("_")}
+
+
 def load_referral_feedback(data_dir: Path) -> dict:
     """A1, optional. Returns {(hubspot_id, employee_id): feedback} or {} if the
     file is absent.
@@ -92,7 +102,7 @@ def load_referral_feedback(data_dir: Path) -> dict:
 
 
 def load_sources(data_dir) -> dict:
-    """A1. Returns the four source dataframes plus the three config dicts.
+    """A1. Returns the four source dataframes plus the four config dicts.
 
     Flow A uses attendees, profiles, employees, skill_aliases. jobs is loaded
     here (per docs/reference/SPEC.md §0) but Flow A must never read it: it is for B1's use.
@@ -109,5 +119,6 @@ def load_sources(data_dir) -> dict:
         "skill_aliases": load_skill_aliases(data_dir),
         "title_families": load_title_families(data_dir),
         "company_domains": load_company_domains(data_dir),
+        "conference_domains": load_conference_domains(data_dir),
         "referral_feedback": load_referral_feedback(data_dir),
     }

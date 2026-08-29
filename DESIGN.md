@@ -37,6 +37,61 @@ Three consequences make it work:
 - **The flows share no process state.** The pool on disk is the only interface, so ingestion can run
   today and matching next month — which is the actual usage pattern.
 
+### Separating "who was in the room" from "who fits this role"
+
+Signal-to-noise is two questions, not one, and they need different answers.
+
+*Does this person fit this role?* is answered by ranking, below — nothing is filtered, and the
+hospital IT manager lands 55th of 75 for JOB001. But that answer only exists once a role exists, and
+it is about **us**. The other question — *who from this event genuinely works in what this event was
+about?* — has no job in it at all. It is a property of the person and the conference, so it belongs
+to Flow A and is computed once, at ingestion, into three columns: a score, a class and a reason.
+
+The distinction that makes it work is what each kind of event is legible from:
+
+| The event is about | Read from | Because |
+| :---- | :---- | :---- |
+| **a discipline** — DevOps, data engineering, broadcast | title + skills | a title tells you whether somebody practises a craft. The employer's sector does not: a DevOps engineer at an agriculture company is a DevOps person |
+| **a subject** — sports technology | skills + industry | every discipline attends a sports-tech summit, so the title tells you almost nothing. What they work on and where they work does |
+
+Two weight sets, one per kind, declared per event in `conference_domains.json`. Nothing per-domain
+to tune.
+
+**What it finds in the supplied data**, with no job involved:
+
+| Event | Core | Adjacent | Off-domain |
+| :---- | ---: | ---: | ---: |
+| SportsTech Innovation Summit (40) | 12 | 10 | 18 |
+| Broadcast & Streaming Technology Expo (12) | 9 | 1 | 2 |
+| Data & AI Summit Europe (12) | 11 | 1 | 0 |
+| DevOps World 2025 (11) | 10 | 0 | 1 |
+
+The one person DevOps World rejects is a network engineer at a telecoms company — the brief's own
+example of the noise a DevOps event attracts. The two the broadcast expo rejects are an IT engineer
+at a textile manufacturer and a healthcare software engineer. And the sports summit's 18 are the
+banking, insurance, legal, logistics, government, pharma, agriculture and pet-industry attendees:
+real people at a real event, none of them there for the subject.
+
+**Three things this deliberately is not.**
+
+It is **not a filter**. Every one of those 18 is still scored, still ranked and still in the pool.
+The column describes the pool; it never narrows it.
+
+It is **not part of `match_score`**. A8 carries no weight in Flow B and writes no column into the
+match output. Relevance to an event and fit for a role are different questions, and the data
+separates them in both directions. Katarzyna Wojcik, an analytics engineer at a Polish insurer, is
+`core` to the Data & AI summit — she belonged in that room — and ranks 60th of 75 for the ML role,
+68th for the backend one, 29th for the data role. Chiara Russo runs the other way: 3rd for JOB001 at
+a score of 83, and only `adjacent` at the broadcast expo she attended, because an ML engineer doing
+video captioning is one step off a room full of broadcast engineers. Both readings are correct about
+different things, and collapsing them into one number would lose both.
+
+And it is **not a verdict on a thin record**. An unverified attendee has no skills and no industry,
+so the registration title is all there is. A title that lands in the event's discipline is enough to
+call them core; a title that misses is not enough to call them noise, because the profile that would
+show their skills is exactly what is absent. A zero on a partial read is `unassessed`
+([`SPEC.md` §A8](docs/reference/SPEC.md#a8--conference-domain-relevance)).
+
 ### Transparent scoring, not a black box
 
 Seven components, each returning a value in `[0,1]`, each multiplied by a weight. Nothing is filtered
@@ -80,8 +135,10 @@ removed Priya Anand — whose title contains no "ML" — before her skills were 
 the strongest candidates for JOB001. Her listed skills name neither required skill outright: under
 exact matching she clears 2 of 5. But YOLO *is* an object-detection model and OpenCV *is* a
 computer-vision library, so alias-resolved matching puts her at 4 of 5 — roughly 12 points, and the
-distance between mid-pack and top-tier. Signal-to-noise is solved by *ranking*: the hospital IT manager
-scores 0 on skills, title, industry and notes, and lands 55th of 75.
+distance between mid-pack and top-tier. Against a role, noise is separated by *ranking*, not by
+exclusion: the hospital IT manager scores 0 on skills, title, industry and notes, and lands 55th of
+75. She is also `off_domain` for the event she attended — but that is the other question, answered
+above, and neither answer removes her row.
 
 ### Where a model earns its cost
 
@@ -185,7 +242,7 @@ yet — the field is the schema for it, not a claim that it runs.
 
 | # | Question | Answer |
 | :--- | :---- | :---- |
-| 1 | **Defining domain relevance** | A weighted, transparent score — never a filter. Nobody is excluded before being scored; noise sinks in the ranking. |
+| 1 | **Defining domain relevance** | Two answers, because it is two questions. *Fit for a role*: a weighted, transparent score — never a filter; nobody is excluded before being scored and noise sinks in the ranking. *In-domain for the event they attended*: `conference_relevance` / `conference_class` / `conference_relevance_why`, computed at ingestion with no job involved, from title and skills for a discipline event and from skills and industry for a subject one. Neither one filters, and the second carries no weight in the first. |
 | 2 | **No LinkedIn profile match** | **Kept and flagged**, never dropped. Only three of seven components are computable (title, notes, conference), so the score is normalized over those weights — `25+10+2 = 37` — and the record carries `unverified`. Missing data must not read as poor fit. |
 | 3 | **1 mutual connection vs. 3** | Neither scores points. Both become *who to ask*, graded A–D by combining connections with confirmed tenure overlap. |
 | 4 | **Candidates already in the ATS** | Flagged via `ats_status`, populated in production by a **read-only** lookup returning whether a process exists, its outcome and date. Here the column exists and is empty. |
@@ -195,7 +252,7 @@ yet — the field is the schema for it, not a claim that it runs.
 
 **On data quality.** All 75 supplied attendees match a LinkedIn profile, so the `unverified` branch
 is implemented but not exercised by the provided files — `data/edge_cases/` is a synthetic fixture
-built to exercise it and nine other branches the supplied data never reaches. Company matching is
+built to exercise it and eleven other branches the supplied data never reaches. Company matching is
 token-bounded rather than substring-based, because naive matching pairs a candidate from `Intel` with
 an employee from an `IDF Intelligence Unit`. A malformed tenure date is treated as "no overlap"
 rather than guessed at.
@@ -302,7 +359,7 @@ enrichment itself.
 
 | | Why |
 | :---- | :---- |
-| **Conference-domain relevance stored at ingestion** | A `conference_relevance` score, classification and reason per attendee, so the pool can answer "who from this event is genuinely in-domain" without first picking a role. |
+| **A vocabulary that maintains itself** | `conference_domains.json` is hand-written per event domain. Generating it from the event's own published programme — and reviewing it — would make A8 hold for a conference nobody anticipated, instead of one already on file. |
 | **One-click referral request with structured replies** | Closes the loop that `referral_feedback` already models but nothing yet writes. |
 | **Structured on-site annotation** | Replacing free-text notes would raise the ceiling on that signal from 10 points to something much higher. |
 | **Pipeline status tracking** | First contact through process, so the pool shows state rather than a snapshot. |
