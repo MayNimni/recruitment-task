@@ -163,14 +163,23 @@ def _blank_if_none(value):
     return "" if value is None else value
 
 
-def _round_or_none(value, digits=4):
-    """Component values/points are exact fractions (e.g. 5/6) that don't
-    terminate in binary floating point (0.8333333333333334). Rounding here is
-    presentation only — the underlying math in score.py is untouched — so the
-    CSV and recruiter view stay traceable without carrying float noise past
-    what a recruiter (or a `value * weight` check) would ever look at.
+def _exact_or_none(value):
+    """Component values and points are written at full precision, not rounded.
+
+    They are exact fractions (experience is 5/6 for a 5-year candidate against
+    a 6-year threshold) that don't terminate in binary floating point. Rounding
+    them for looks breaks the one contract this output exists to keep: a score
+    must reproduce from its own published columns. Four of the 75 JOB001
+    candidates land on a total of exactly 36.5 / 20.5 / 18.5, which rounds up
+    to the printed match_score — but 0.8333 x 15 is 12.4995, so a `value x
+    weight` check against a rounded column produced a number one point below
+    the score printed beside it.
+
+    Nothing renders these raw: the recruiter view formats every component with
+    toFixed(2) before it reaches the screen, and the CSV's own match_score
+    column is already an integer. Precision here is for the audit, not the eye.
     """
-    return None if value is None else round(value, digits)
+    return None if value is None else value
 
 
 def build_match_row(job_row, pool_row: dict, requirements: dict, scored: dict, candidate_edges: list) -> dict:
@@ -222,8 +231,8 @@ def build_match_row(job_row, pool_row: dict, requirements: dict, scored: dict, c
         "conference_date": pool_row.get("conference_date") or "",
     }
     for name in ("skills", "title", "experience", "industry", "notes", "past", "conference"):
-        row[f"value_{name}"] = _blank_if_none(_round_or_none(values[name]))
-        row[f"points_{name}"] = _blank_if_none(_round_or_none(points[name]))
+        row[f"value_{name}"] = _blank_if_none(_exact_or_none(values[name]))
+        row[f"points_{name}"] = _blank_if_none(_exact_or_none(points[name]))
 
     # Consumed by write_recruiter_view, dropped before the CSV write (MATCHES_COLUMNS
     # doesn't include them, so building the CSV frame from that fixed column list ignores them).
@@ -287,7 +296,7 @@ def _build_candidate_record(pool_row: dict, requirements: dict, values: dict) ->
         "note_meaning": note_meaning(pool_row, requirements),
         "unverified": pool_row.get("unverified", False),
         "component_values": {
-            name: _round_or_none(values[name])
+            name: _exact_or_none(values[name])
             for name in ("skills", "title", "experience", "industry", "notes", "past", "conference")
         },
         "skills_matched": matched,
@@ -448,7 +457,7 @@ def _row_to_data_item(row: dict, pool_row: dict) -> dict:
         # view normalizes over exactly those weights, as score.py does, and
         # labels the rest "not scored" instead of showing them as a zero.
         **({"u": True, "b": row["score_basis"].split(";")} if pool_row.get("unverified") else {}),
-        "v": {name: (_round_or_none(row["_values"][name]) if row["_values"][name] is not None else 0.0)
+        "v": {name: (_exact_or_none(row["_values"][name]) if row["_values"][name] is not None else 0.0)
               for name in ("skills", "title", "experience", "industry", "notes", "past", "conference")},
         "score": row["match_score"],
         "m": matched,
