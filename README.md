@@ -1,5 +1,7 @@
 # Conference-attendee talent pool
 
+[![pipeline](https://github.com/MayNimni/recruitment-task/actions/workflows/pipeline.yml/badge.svg)](https://github.com/MayNimni/recruitment-task/actions/workflows/pipeline.yml)
+
 Captures conference attendees as talent leads, enriches them with LinkedIn data once, and surfaces
 the right candidates when a role opens.
 
@@ -80,7 +82,18 @@ python3 pipeline/main.py run --job JOB001
 | `index` | rebuild `index.html` (runs automatically after `match` / `run`) |
 
 Both flows are **deterministic**: two consecutive runs produce byte-identical files, and a clean
-checkout reproduces every committed artifact exactly.
+checkout reproduces every committed artifact exactly. That is not a claim, it is a check — CI runs
+every command above on a fresh clone and fails if a single committed byte moves.
+
+```bash
+python3 -m unittest discover tests
+```
+
+56 assertions behind the guarantees in [`SPEC.md` §11](docs/reference/SPEC.md#11-done-means): the
+score reproduces from its own published columns, an unverified row normalizes over 37 rather than
+100, an `insufficient` referral is retired before selection, a candidate from Intel is never paired
+with an employee from an IDF Intelligence Unit, and nothing on the default path imports a network
+library. CI runs them on Python 3.10, 3.12 and 3.14, and against both pandas 2.x and 3.x.
 
 `match` exits non-zero with a message naming `ingest` if the pool is empty, and lists the valid ids
 if `--job` is unknown.
@@ -162,6 +175,7 @@ DESIGN.md           the design document
 data/               supplied CSVs + config, and the edge-case fixture
 pipeline/           ingest · enrich · score · output · main
 tests/              the acceptance checks — python3 -m unittest discover tests
+.github/workflows/  CI: the suite, both pandas majors, and a clean-checkout rebuild
 pool/               Flow A output
 output/             Flow B output, one CSV + one HTML per role
 docs/reference/     implementation contract (SPEC) + alias generation log

@@ -57,6 +57,8 @@ pipeline/
   build_aliases.py            offline generator for skill_aliases.json
 tests/
   test_pipeline.py            the §11 acceptance checks — python3 -m unittest discover tests
+.github/workflows/
+  pipeline.yml                CI — the suite, both pandas majors, a clean-checkout rebuild
 recruiter_view.html           per-role template, copied by B8
 index_template.html           landing-page template
 index.html                    generated landing page — the reviewer's entry point
@@ -683,3 +685,10 @@ python3 -m unittest discover tests
 
 The reproducibility tests re-run the pipeline and compare against the artifacts committed in the
 repo, so a stale committed artifact fails the suite rather than passing unnoticed.
+
+CI (`.github/workflows/pipeline.yml`) runs the suite on Python 3.10, 3.12 and 3.14, runs it again
+against pandas 2.x and pandas 3.x separately — which is what makes `requirements.txt`'s
+compatibility note a check rather than a claim — and then executes every command in the README on a
+fresh clone and fails if `git status` is not empty afterwards. That last job covers all fifteen
+committed artifacts — both pools, both fixture pools, eight per-role files, the two fixture outputs
+and the landing page — rather than the four the unit tests hash.
