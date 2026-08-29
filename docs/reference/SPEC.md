@@ -1,6 +1,6 @@
 # SPEC — architecture and implementation contract
 
-What the system is, how it is partitioned, and exactly what each step must produce. `DECISIONS.md`
+What the system is, how it is partitioned, and exactly what each step must produce. `DESIGN.md`
 explains **why** and wins wherever the two disagree. `README.md` covers setup and how to run.
 
 ---
@@ -53,11 +53,16 @@ pipeline/
   ingest.py  enrich.py  score.py  output.py  main.py
   llm.py                      B7 live seam — imported only under `match --llm`
   build_aliases.py            offline generator for skill_aliases.json
+tests/
+  test_pipeline.py            the §11 acceptance checks — python3 -m unittest discover tests
 recruiter_view.html           per-role template, copied by B8
 index_template.html           landing-page template
 index.html                    generated landing page — the reviewer's entry point
-docs/alias_generation_log.md  record of the build_aliases.py run
-README.md  DECISIONS.md  SPEC.md  requirements.txt
+docs/reference/
+  SPEC.md                     this document
+  alias_generation_log.md     record of the build_aliases.py run
+  images/                     README screenshot, rendered from the committed recruiter view
+README.md  DESIGN.md  requirements.txt
 ```
 
 Config is data, not code: extending the alias table requires no release.
@@ -139,7 +144,7 @@ flowchart LR
 
 Key is `linkedin_url`, exact match after stripping whitespace, a leading `https://` and `www.`. **No
 name-based fallback** — common names produce false matches, and misidentifying a candidate is worse
-than not identifying one (`DECISIONS.md` §2.2).
+than not identifying one (`DESIGN.md` §2).
 
 An unmatched row is **kept** with `unverified = True` and profile-derived fields empty. In the
 supplied data all 75 rows match, so this branch is code and documentation, not a demonstrated path;
@@ -311,7 +316,7 @@ engineer` and `sports data scientist` both land on their family.
 With no profile, exactly **three** components are computable: `title`, `notes`, `conference`
 (industry, skills, experience and past companies all come from the profile). Sum only those weights
 and divide by that sum — `25 + 10 + 2 = 37` — rather than by 100, and set `score_basis` to the list
-used. **Missing data must not read as poor fit** (`DECISIONS.md` §2.2). Presentation rules in §7.
+used. **Missing data must not read as poor fit** (`DESIGN.md` §2). Presentation rules in §7.
 
 ### B4 — weights and ranking
 
@@ -325,6 +330,13 @@ that same dictionary:
 matches `Math.round` in the recruiter view, so a raw score of exactly `86.5` cannot round one way in
 the CSV and the other on screen. Sort descending; ties break on `years_experience`, then
 `hubspot_id`, so runs are reproducible.
+
+`value_*` and `points_*` are written at **full float precision, never rounded for looks**. Several
+components are non-terminating fractions — experience is `5/6` for a five-year candidate against a
+six-year threshold — and four of the 75 JOB001 candidates total exactly `x.5` before rounding. A
+value rounded to four decimals puts them a hair below that boundary, so a `value × weight` check
+against the published columns would return a number one point under the `match_score` printed beside
+it. Nothing renders these raw: the view formats every component with `toFixed(2)` before display.
 
 ### B5 — referral selection
 
@@ -515,7 +527,7 @@ mapping: what each pipeline step reads today, and what replaces it in production
 | A2 | exact join on `linkedin_url` | provider records on the same key; unmatched go to a review queue, still `unverified` |
 | A3 | dictionary lookup | dictionary + model resolution for misses, cached back |
 | A4 | token extraction | model returning structured tags, or structured capture upstream |
-| A5 | parse delimited id list | connection data from the provider; roster from the HR system |
+| A5 | parse delimited id list | consent-gated — TeamLink (a Recruiter seat per employee) or a voluntary employee export; no provider sells a private connection graph. Absent when neither exists, and the shared-employer step (A6) still produces edges. Roster from the HR system |
 | A6 | roster comparison | unchanged |
 | A7 | tier from stored signals | unchanged; `referral_feedback` written back from HubSpot |
 | A8 | write two CSVs | write HubSpot contact properties — HubSpot is the system of record |
@@ -562,3 +574,13 @@ at `output/edge_cases/`.
 - Every number in the recruiter view traces to `value × weight` in the CSV — including unverified rows, which trace against their own basis (§7).
 - A candidate with no edges renders as "No referral path" and is not dropped.
 - No module reachable from a default run imports a network library.
+
+Each of these is an assertion in `tests/`, along with the tier table, the token-bounded company
+match, referral retirement, and the two CLI failure modes:
+
+```
+python3 -m unittest discover tests
+```
+
+The reproducibility tests re-run the pipeline and compare against the artifacts committed in the
+repo, so a stale committed artifact fails the suite rather than passing unnoticed.
