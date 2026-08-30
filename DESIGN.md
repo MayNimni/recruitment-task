@@ -9,6 +9,18 @@ Deeper material — full architecture, exact scoring rules, column contracts, fa
 
 ---
 
+## For a non-technical reader
+
+Every month the team fills a room with exactly the engineers it wants to hire, and within days those
+contacts are gone. This system turns each event into a permanent, searchable talent pool: every
+attendee is enriched once and stored, and when a role opens the pool is ranked against it in seconds.
+A recruiter sees a short list — the person, a match percentage, the skills they have and the ones
+they're missing, and where one exists, the name of the colleague who already knows them. Every score
+opens up to show how it was calculated, so the shortlist can be defended to a hiring manager rather
+than trusted blindly.
+
+---
+
 ## 1. Why this approach
 
 ### Two flows on two triggers, not one pipeline
@@ -378,14 +390,4 @@ when two colleagues disagree; whether an `insufficient` response expires; the pe
 cap; whether the ATS constraint is regulatory, contractual or operational (the design assumes the
 most restrictive reading); and where the match percentage should change colour.
 
----
 
-## For a non-technical reader
-
-Every month the team fills a room with exactly the engineers it wants to hire, and within days those
-contacts are gone. This system turns each event into a permanent, searchable talent pool: every
-attendee is enriched once and stored, and when a role opens the pool is ranked against it in seconds.
-A recruiter sees a short list — the person, a match percentage, the skills they have and the ones
-they're missing, and where one exists, the name of the colleague who already knows them. Every score
-opens up to show how it was calculated, so the shortlist can be defended to a hiring manager rather
-than trusted blindly.
